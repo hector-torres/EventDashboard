@@ -106,16 +106,17 @@ def _index_market_tokens(market: Dict) -> None:
 
 def score_market_against_corpus(market: Dict, corpus_tokens: frozenset) -> float:
     """
-    Fast Jaccard score of a pre-indexed market against a pre-built corpus frozenset.
-    O(1) — both sides are already expanded sets.  Call _index_market_tokens first.
+    Score a pre-indexed market against a pre-built corpus frozenset.
+
+    Uses market-side coverage: intersection / len(market_tokens).
+    This measures "what fraction of this market's tokens appear in the news corpus",
+    which is stable regardless of corpus size — unlike union-Jaccard which approaches
+    zero as the corpus grows.  Call _index_market_tokens first.
     """
     mi = market.get('_tok')
     if not mi or not corpus_tokens:
         return 0.0
-    union_len = len(mi | corpus_tokens)
-    if union_len == 0:
-        return 0.0
-    return round(len(mi & corpus_tokens) / union_len, 4)
+    return round(len(mi & corpus_tokens) / len(mi), 4)
 
 
 # kept for backwards compat / external callers
@@ -600,6 +601,10 @@ class KalshiFeedManager:
             results.append(m)
         return results
 
+    # Bump this version string whenever the scoring formula changes, to
+    # force a rescore and discard stale cached results.
+    _SCORER_VERSION = 'v2-coverage'
+
     def update_match_corpus(self, texts: List[str]) -> None:
         """
         Schedule a background re-score with the given texts.
@@ -607,7 +612,7 @@ class KalshiFeedManager:
         Skips if texts are identical to last scored corpus.
         Drops duplicate requests if a score is already running.
         """
-        h = hash(tuple(texts))
+        h = hash((self._SCORER_VERSION, tuple(texts)))
         with self._match_lock:
             if h == self._last_corpus_hash and self._match_cache:
                 return  # same corpus, cached results still valid

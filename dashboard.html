@@ -950,6 +950,24 @@
     }
     .k-cat-row.active .k-cat-count { color: #2a4a99; }
 
+    /* Category toggle styles */
+    .k-cat-toggle-row { gap: 4px; }
+    .k-cat-toggle-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .k-cat-eye {
+      font-size: 9px; flex-shrink: 0; cursor: pointer; border-radius: 10px;
+      padding: 1px 5px; border: 1px solid #2a6; color: #2a6;
+      background: rgba(34,170,102,0.10);
+      transition: all 0.15s; white-space: nowrap; user-select: none;
+      line-height: 14px;
+    }
+    .k-cat-eye:hover { background: rgba(34,170,102,0.25); color: #3cf; border-color: #3cf; }
+    .k-cat-excluded .k-cat-eye { color: #555; border-color: #333; background: rgba(80,80,80,0.10); }
+    .k-cat-excluded .k-cat-eye:hover { color: #aaa; border-color: #666; background: rgba(80,80,80,0.25); }
+    .k-cat-excluded .k-cat-toggle-label { color: #333; text-decoration: line-through; }
+    .k-cat-excluded .k-cat-count { color: #222; }
+    .k-cat-excluded:hover { background: #0a0a0a; color: #555; }
+    .k-cat-excluded.active { background: transparent; }
+
     /* Series column */
     .k-col-series { flex: 1; min-width: 0; }
     .k-series-row {
@@ -1362,6 +1380,7 @@
             <button class="k-sort-btn active" id="kmsort-conf"      onclick="kSetMatchSort('conf')">Confidence</button>
             <button class="k-sort-btn"        id="kmsort-prob-desc" onclick="kSetMatchSort('prob-desc')">Prob ↓</button>
             <button class="k-sort-btn"        id="kmsort-prob-asc"  onclick="kSetMatchSort('prob-asc')">Prob ↑</button>
+            <button class="k-sort-btn"        id="kmsort-value"     onclick="kSetMatchSort('value')" title="Confidence × price uncertainty — surfaces relevant markets before they fully price in">Value</button>
           </div>
           <div class="k-col-scroll" id="km-market-body">
             <div id="k-match-empty" style="padding:16px 18px;font-size:10px;line-height:1.7;color:#555;max-width:340px">
@@ -2001,10 +2020,11 @@ let kSearchQuery      = '';         // live text in search bar
 let kSearchDebounce   = null;
 // Match 3-col state
 let kMatchAllMarkets  = [];         // full array from last /match response
-let kMatchSortMode    = 'conf';     // 'conf' | 'prob-desc' | 'prob-asc'
+let kMatchSortMode    = 'conf';     // 'conf' | 'prob-desc' | 'prob-asc' | 'value'
 let kMatchCategory    = '';
 let kMatchSeries      = null;
 let kMatchSeriesMap   = {};         // ticker → series info
+let kMatchExcludedCats = new Set(); // categories hidden by user toggle
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function kSwitchTab(tab) {
@@ -2378,13 +2398,15 @@ async function kFetchMatch() {
   kBuildMatchCategoryColumn();
 }
 
+function kGetMarketCat(m) {
+  const s = kMatchSeriesMap[m.series_ticker || ''];
+  return (s && s.category) || m.category || 'Other';
+}
+
 function kBuildMatchCategoryColumn() {
-  // Derive category from series_ticker → kAllSeries lookup
   const counts = {};
   for (const m of kMatchAllMarkets) {
-    const sTicker = m.series_ticker || '';
-    const s = kMatchSeriesMap[sTicker];
-    const cat = (s && s.category) || m.category || 'Other';
+    const cat = kGetMarketCat(m);
     counts[cat] = (counts[cat] || 0) + 1;
   }
   const cats = Object.keys(counts).sort();
@@ -2411,47 +2433,69 @@ function kBuildMatchCategoryColumn() {
     return;
   }
 
-  // "All" row
+  // Count visible (non-excluded) markets for the header
+  const visibleTotal = kMatchAllMarkets.filter(m => !kMatchExcludedCats.has(kGetMarketCat(m))).length;
+
+  // "All" header row (shows count of non-excluded markets, not a toggle)
   const allEl = document.createElement('div');
-  allEl.className = 'k-cat-row' + (kMatchCategory === '__ALL__' ? ' active' : '');
+  allEl.className = 'k-cat-row k-cat-all-row' + (kMatchCategory === '__ALL__' ? ' active' : '');
   allEl.dataset.cat = '__ALL__';
-  allEl.innerHTML = `<span>All</span><span class="k-cat-count">${kMatchAllMarkets.length}</span>`;
-  allEl.onclick = () => kSelectMatchCategory('__ALL__', allEl);
+  const hasExclusions = kMatchExcludedCats.size > 0;
+  allEl.innerHTML = `<span>All</span><span class="k-cat-count">${visibleTotal}</span>${hasExclusions ? '<span class=\"k-cat-reset\" title=\"Show all hidden\" onclick=\"event.stopPropagation();kResetMatchCats()\">reset</span>' : ''}`;
+  allEl.onclick = () => kSelectMatchCategory('__ALL__');
   list.appendChild(allEl);
 
+  // Category rows with toggle checkboxes
   for (const cat of cats) {
+    const excluded = kMatchExcludedCats.has(cat);
     const el = document.createElement('div');
-    el.className = 'k-cat-row' + (kMatchCategory === cat ? ' active' : '');
+    el.className = 'k-cat-row k-cat-toggle-row' + (kMatchCategory === cat ? ' active' : '') + (excluded ? ' k-cat-excluded' : '');
     el.dataset.cat = cat;
-    el.innerHTML = `<span>${cat}</span><span class="k-cat-count">${counts[cat]}</span>`;
-    el.onclick = () => kSelectMatchCategory(cat, el);
+    el.innerHTML = `
+      <span class="k-cat-toggle-label" title="Click to select / filter series">${cat}</span>
+      <span class="k-cat-count">${counts[cat]}</span>
+      <span class="k-cat-eye" title="${excluded ? 'Hidden — click to show' : 'Visible — click to hide'}"
+            onclick="event.stopPropagation(); kToggleMatchCat('${cat}')">${excluded ? 'OFF' : 'ON'}</span>`;
+    el.onclick = () => kSelectMatchCategory(cat);
     list.appendChild(el);
   }
 
-  // Auto-select "All" if nothing selected, else reselect current
-  if (!kMatchCategory) {
-    kSelectMatchCategory('__ALL__', allEl);
-  } else {
-    const existing = list.querySelector(`[data-cat="${kMatchCategory}"]`);
-    if (existing) kSelectMatchCategory(kMatchCategory, existing);
-    else kSelectMatchCategory('__ALL__', allEl);
-  }
+  // Auto-select or re-apply current selection
+  kSelectMatchCategory(kMatchCategory || '__ALL__');
 }
 
-function kSelectMatchCategory(cat, el) {
+function kToggleMatchCat(cat) {
+  if (kMatchExcludedCats.has(cat)) {
+    kMatchExcludedCats.delete(cat);
+  } else {
+    kMatchExcludedCats.add(cat);
+    // If the user hid the currently-selected category, jump to All
+    if (kMatchCategory === cat) kMatchCategory = '__ALL__';
+  }
+  kBuildMatchCategoryColumn();
+}
+
+function kResetMatchCats() {
+  kMatchExcludedCats = new Set();
+  kBuildMatchCategoryColumn();
+}
+
+function kSelectMatchCategory(cat) {
   kMatchCategory = cat;
   kMatchSeries   = null;
   kCurrentPageM  = 1;
   document.querySelectorAll('#km-cat-list .k-cat-row').forEach(r => r.classList.remove('active'));
-  if (el) el.classList.add('active');
+  const activeEl = document.querySelector(`#km-cat-list [data-cat="${cat}"]`);
+  if (activeEl) activeEl.classList.add('active');
 
   const hdr = document.getElementById('km-series-header');
   if (hdr) hdr.textContent = cat === '__ALL__' ? 'All Series' : cat;
 
-  // Filter markets by category
-  const catMarkets = cat === '__ALL__' ? kMatchAllMarkets : kMatchAllMarkets.filter(m => {
-    const s = kMatchSeriesMap[m.series_ticker || ''];
-    const mcat = (s && s.category) || m.category || 'Other';
+  // Filter by category selection AND excluded categories
+  const catMarkets = kMatchAllMarkets.filter(m => {
+    const mcat = kGetMarketCat(m);
+    if (kMatchExcludedCats.has(mcat)) return false;
+    if (cat === '__ALL__') return true;
     return mcat === cat;
   });
 
@@ -2490,13 +2534,13 @@ function kSelectMatchSeries(ticker, el, catMarketsOverride) {
   document.querySelectorAll('#km-series-list .k-series-row').forEach(r => r.classList.remove('active'));
   if (el) el.classList.add('active');
 
-  // Get cat markets
-  const catMarkets = catMarketsOverride || (kMatchCategory === '__ALL__'
-    ? kMatchAllMarkets
-    : kMatchAllMarkets.filter(m => {
-        const s = kMatchSeriesMap[m.series_ticker || ''];
-        return ((s && s.category) || m.category || 'Other') === kMatchCategory;
-      }));
+  // Get cat markets — always respect exclusion filter
+  const catMarkets = catMarketsOverride || kMatchAllMarkets.filter(m => {
+    const mcat = kGetMarketCat(m);
+    if (kMatchExcludedCats.has(mcat)) return false;
+    if (kMatchCategory === '__ALL__') return true;
+    return mcat === kMatchCategory;
+  });
 
   const filtered = ticker ? catMarkets.filter(m => m.series_ticker === ticker) : catMarkets;
   kRenderMatchMarkets(filtered);
@@ -2513,6 +2557,16 @@ function kRenderMatchMarkets(markets) {
     sorted.sort((a, b) => (b.yes_ask ?? b.last_price ?? 0) - (a.yes_ask ?? a.last_price ?? 0));
   } else if (kMatchSortMode === 'prob-asc') {
     sorted.sort((a, b) => (a.yes_ask ?? a.last_price ?? 0) - (b.yes_ask ?? b.last_price ?? 0));
+  } else if (kMatchSortMode === 'value') {
+    // Value = confidence × price uncertainty
+    // uncertainty = 1 - |yes_ask - 50| / 50  (peaks at 0.5 prob, zero at 0 or 100)
+    sorted.sort((a, b) => {
+      const priceA = a.yes_ask ?? a.last_price ?? 50;
+      const priceB = b.yes_ask ?? b.last_price ?? 50;
+      const uncertA = 1 - Math.abs(priceA - 50) / 50;
+      const uncertB = 1 - Math.abs(priceB - 50) / 50;
+      return (b._score * uncertB) - (a._score * uncertA);
+    });
   }
   // 'conf' keeps original order (already sorted by _score desc from backend)
 
@@ -2641,10 +2695,18 @@ function kRenderMarket(m, showScore) {
     ? `<span class="k-meta-tag" style="color:#6af;font-family:monospace">${(m.event_ticker||'').toUpperCase()}</span>`
     : '';
 
+  // Urgency badge: highlight markets closing very soon
+  let urgencyBadge = '';
+  if (daysLeft !== '?') {
+    const d = parseFloat(daysLeft);
+    if (d <= 1)      urgencyBadge = `<span class="k-meta-tag k-urgency-critical" title="Closes within 24h">🔴 &lt;24h</span>`;
+    else if (d <= 3) urgencyBadge = `<span class="k-meta-tag k-urgency-soon" title="Closes within 3 days">⚠ ${d.toFixed(0)}d</span>`;
+  }
+
   const metaTags = [
     m.category ? `<span class="k-meta-tag">${m.category}</span>` : '',
     eventTag,
-    `<span class="k-meta-tag">${daysLeft}d</span>`,
+    urgencyBadge || `<span class="k-meta-tag">${daysLeft}d</span>`,
     `<span class="k-meta-tag">vol ${vol}</span>`,
     showScore ? `<div class="k-score-bar"><div class="k-score-fill" style="width:${Math.round(score*100)}%"></div></div>` : '',
     `<a class="k-market-link" href="${url}" target="_blank">↗ kalshi</a>`,
@@ -2732,6 +2794,7 @@ async function kManualRefresh() {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
+kLoadExcludedCats();   // restore hidden categories from last session
 kUpdatePriceRange();
 kUpdateDaysRange();
 kUpdateConfidence();

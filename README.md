@@ -357,3 +357,20 @@ _BLOCKED_SERIES_PREFIXES: Tuple[str, ...] = (
     'KXOTHER',    # add more noisy series here
 )
 ```
+
+## Next Steps
+
+### Event Detection improvements:
+
+- RSS/wire ingestion — pull Reuters, AP, AFP RSS feeds directly in addition to Bluesky. Wire services are your highest-signal source and bypass the Bluesky account lag
+- Entity deduplication — cluster events about the same entity (Iran, Fed, etc.) rather than keeping 15 separate MEDIUM spikes for "iranian", "strikes", "wounded", "pentagon" as separate events. One IRAN-WAR event with a rich post set would score far better against Kalshi than 15 thin keyword events
+- Temporal decay scoring — weight posts from the last 5 minutes 5× over posts from 3 hours ago when building the corpus. Right now a stale "developing" event about a story that ended competes equally with a breaking one
+- Recency-gated severity — a MEDIUM event with 50 posts in the last 2 minutes is more actionable than a HIGH event with 4 posts from 3 hours ago; factor velocity/recency into displayed priority
+
+### Market Matching improvements:
+
+- LLM headline distillation — when a cluster fires (P8 from your backlog), call Claude API with the top 5 posts and generate a clean 1-sentence headline. Use that as the primary corpus text rather than raw posts (which contain noise, emoji, URLs). Tight headlines match market titles much better
+- Kalshi market pre-seeding on event detection (P9 from backlog) — the moment a HIGH/CRITICAL event fires, immediately trigger a targeted rescore instead of waiting for the next 30s poll. Speed matters for event-based trading
+- Inverse market filtering — for a "Iran closes Hormuz" event, also surface markets that would be negatively affected (e.g., oil supply markets, shipping markets) not just ones with direct keyword overlap
+- Price-weighted match display — sort matched markets by score × (1 - yes_ask/100) to surface markets with good matches that also have meaningful price uncertainty (not already at 95¢)
+- Market close urgency signal — flag matched markets closing within 24–48 hours. That's where event-driven price dislocations are most exploitable

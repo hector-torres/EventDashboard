@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Match Detail — Event Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #080808;
+    color: #c0c0c0;
+    font-family: 'Inter', 'SF Pro Text', system-ui, sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 0 0 60px 0;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    background: #0a0a0a;
+    border-bottom: 1px solid #1a1a1a;
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .header-back {
+    color: #444; font-size: 16px; text-decoration: none;
+    cursor: pointer; user-select: none;
+    transition: color 0.15s;
+  }
+  .header-back:hover { color: #888; }
+  .header-brand {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.18em;
+    text-transform: uppercase; color: #333;
+  }
+  .header-sep { color: #222; font-size: 14px; }
+
+  /* ── Market hero card ── */
+  .market-hero {
+    margin: 24px 28px 0;
+    background: #0e0e0e;
+    border: 1px solid #1e1e1e;
+    border-radius: 6px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+  }
+  .hero-score-block {
+    display: flex; flex-direction: column;
+    align-items: center; flex-shrink: 0;
+    min-width: 64px;
+  }
+  .hero-score {
+    font-size: 28px; font-weight: 800; color: #4a8fff;
+    letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .hero-score-label {
+    font-size: 8px; font-weight: 700; color: #1f3a7a;
+    text-transform: uppercase; letter-spacing: 0.15em;
+    margin-top: 3px;
+  }
+  .hero-info { flex: 1; min-width: 0; }
+  .hero-ticker {
+    font-size: 10px; font-weight: 700; color: #4a8fff;
+    font-family: monospace; letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .hero-title {
+    font-size: 17px; font-weight: 700; color: #e8e8e8;
+    line-height: 1.35; margin-bottom: 8px;
+  }
+  .hero-meta {
+    display: flex; gap: 10px; flex-wrap: wrap;
+  }
+  .hero-tag {
+    font-size: 10px; padding: 2px 8px;
+    background: #141414; border: 1px solid #222;
+    border-radius: 3px; color: #666;
+  }
+  .hero-kalshi-link {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; color: #4a8fff; text-decoration: none;
+    padding: 2px 8px; border: 1px solid #1a3060;
+    border-radius: 3px; background: #0a1628;
+    transition: background 0.15s;
+  }
+  .hero-kalshi-link:hover { background: #0f1e3a; }
+
+  /* ── Section ── */
+  .section {
+    margin: 20px 28px 0;
+  }
+  .section-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 10px;
+  }
+  .section-title {
+    font-size: 10px; font-weight: 700; color: #444;
+    text-transform: uppercase; letter-spacing: 0.15em;
+  }
+  .section-count {
+    font-size: 10px; color: #333;
+    background: #111; border: 1px solid #1e1e1e;
+    border-radius: 3px; padding: 1px 6px;
+  }
+
+  /* ── Match cards ── */
+  .match-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .match-card {
+    background: #0c0c0c;
+    border: 1px solid #1a1a1a;
+    border-radius: 5px;
+    padding: 12px 14px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    transition: border-color 0.15s;
+  }
+  .match-card:hover { border-color: #2a2a2a; }
+
+  .match-card.source-event { border-left: 3px solid #1a3a1a; }
+  .match-card.source-post  { border-left: 3px solid #1a2a3a; }
+
+  .match-score-col {
+    flex-shrink: 0; min-width: 44px;
+    display: flex; flex-direction: column;
+    align-items: center; padding-top: 2px;
+  }
+  .match-score {
+    font-size: 15px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .match-score.high   { color: #4a8fff; }
+  .match-score.medium { color: #aa6622; }
+  .match-score.low    { color: #444; }
+  .match-score-bar-wrap {
+    width: 36px; height: 3px;
+    background: #1a1a1a; border-radius: 2px;
+    margin-top: 4px; overflow: hidden;
+  }
+  .match-score-bar {
+    height: 100%; border-radius: 2px;
+    background: #2255cc;
+  }
+
+  .match-body { flex: 1; min-width: 0; }
+
+  .match-source-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 5px;
+  }
+  .badge-event { color: #3a7a3a; }
+  .badge-post  { color: #3a5a9a; }
+
+  .sev-chip {
+    font-size: 8px; padding: 1px 5px;
+    border-radius: 2px; font-weight: 700; letter-spacing: 0.08em;
+  }
+  .sev-CRITICAL { background: rgba(180,0,20,0.18); color: #ff4455; border: 1px solid rgba(180,0,20,0.3); }
+  .sev-HIGH     { background: rgba(180,100,0,0.18); color: #ffaa33; border: 1px solid rgba(180,100,0,0.3); }
+  .sev-MEDIUM   { background: rgba(100,100,0,0.12); color: #aaaa44; border: 1px solid rgba(100,100,0,0.2); }
+
+  .match-text {
+    font-size: 12px; color: #aaa; line-height: 1.5;
+    margin-bottom: 6px;
+  }
+  .match-text strong { color: #ccc; }
+
+  .match-meta {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  }
+  .meta-item {
+    font-size: 10px; color: #444;
+  }
+  .meta-item a {
+    color: #4a8fff; text-decoration: none;
+  }
+  .meta-item a:hover { text-decoration: underline; }
+  .news-dot {
+    display: inline-block; width: 5px; height: 5px;
+    background: #3a7a3a; border-radius: 50%;
+    margin-right: 3px; vertical-align: middle;
+  }
+
+  .sample-posts {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #141414;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .sample-post {
+    font-size: 11px; color: #555; line-height: 1.45;
+    padding-left: 8px; border-left: 2px solid #1a1a1a;
+  }
+
+  /* ── Empty / loading states ── */
+  .state-loading {
+    display: flex; align-items: center; gap: 10px;
+    color: #444; font-size: 12px;
+    padding: 40px 0; justify-content: center;
+  }
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid #1e1e1e;
+    border-top-color: #4a8fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .state-empty {
+    color: #333; font-size: 12px;
+    padding: 40px 0; text-align: center;
+  }
+  .state-error {
+    color: #662222; font-size: 12px;
+    padding: 20px; background: #0e0808;
+    border: 1px solid #2a1a1a; border-radius: 5px;
+    margin: 20px 28px;
+  }
+
+  /* ── Divider ── */
+  .match-type-divider {
+    display: flex; align-items: center; gap: 10px;
+    margin: 16px 0 10px;
+    color: #2a2a2a; font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .match-type-divider::before,
+  .match-type-divider::after {
+    content: ''; flex: 1; height: 1px; background: #1a1a1a;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <a class="header-back" onclick="window.close()" title="Close">✕</a>
+  <span class="header-sep">|</span>
+  <span class="header-brand">Event Dashboard — Match Detail</span>
+</div>
+
+<div id="root">
+  <div class="state-loading">
+    <div class="spinner"></div>
+    Loading match detail…
+  </div>
+</div>
+
+<script>
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function scoreClass(s) {
+  if (s >= 0.4) return 'high';
+  if (s >= 0.2) return 'medium';
+  return 'low';
+}
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60)  return Math.round(diff) + 's ago';
+  if (diff < 3600) return Math.round(diff/60) + 'm ago';
+  return Math.round(diff/3600) + 'h ago';
+}
+
+function renderEventMatch(m) {
+  const sevChip = m.severity
+    ? `<span class="sev-chip sev-${m.severity}">${m.severity}</span>` : '';
+  const stratLabel = m.strategy === 'keyword_cluster' ? '🔑 keyword' :
+                     m.strategy === 'velocity_spike'  ? '📈 spike'   : m.strategy;
+  const samples = (m.sample_posts||[]).map(t =>
+    `<div class="sample-post">${esc(t)}</div>`
+  ).join('');
+  const sampleBlock = samples
+    ? `<div class="sample-posts">${samples}</div>` : '';
+
+  return `
+    <div class="match-card source-event">
+      <div class="match-score-col">
+        <div class="match-score ${scoreClass(m.score)}">${m.score.toFixed(2)}</div>
+        <div class="match-score-bar-wrap">
+          <div class="match-score-bar" style="width:${Math.min(100,Math.round(m.score*150))}%"></div>
+        </div>
+      </div>
+      <div class="match-body">
+        <div class="match-source-badge badge-event">
+          ▲ Detected Event &nbsp;${sevChip}
+        </div>
+        <div class="match-text">${esc(m.text)}</div>
+        <div class="match-meta">
+          <span class="meta-item">${stratLabel}</span>
+          ${m.keyword ? `<span class="meta-item">keyword: <strong>${esc(m.keyword)}</strong></span>` : ''}
+          ${m.post_count ? `<span class="meta-item">${m.post_count} post${m.post_count!==1?'s':''}</span>` : ''}
+          ${m.detected_at ? `<span class="meta-item">${timeAgo(m.detected_at)}</span>` : ''}
+        </div>
+        ${sampleBlock}
+      </div>
+    </div>`;
+}
+
+function renderPostMatch(m) {
+  const newsIndicator = m.is_news
+    ? `<span class="meta-item"><span class="news-dot"></span>news account</span>` : '';
+  const postLink = m.url
+    ? `<span class="meta-item"><a href="${esc(m.url)}" target="_blank">↗ view post</a></span>` : '';
+
+  return `
+    <div class="match-card source-post">
+      <div class="match-score-col">
+        <div class="match-score ${scoreClass(m.score)}">${m.score.toFixed(2)}</div>
+        <div class="match-score-bar-wrap">
+          <div class="match-score-bar" style="width:${Math.min(100,Math.round(m.score*150))}%"></div>
+        </div>
+      </div>
+      <div class="match-body">
+        <div class="match-source-badge badge-post">
+          ◆ Bluesky Post &nbsp;${m.display ? `<span style="color:#555;font-weight:400;text-transform:none;letter-spacing:0">${esc(m.display)}</span>` : ''}
+        </div>
+        <div class="match-text">${esc(m.text)}</div>
+        <div class="match-meta">
+          ${m.handle ? `<span class="meta-item" style="color:#3a5a9a">@${esc(m.handle)}</span>` : ''}
+          ${newsIndicator}
+          ${postLink}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function load() {
+  const params = new URLSearchParams(window.location.search);
+  const ticker = params.get('ticker');
+  if (!ticker) {
+    document.getElementById('root').innerHTML =
+      `<div class="state-error">No ticker specified. Open this page from a Semantic Match card.</div>`;
+    return;
+  }
+
+  let data;
+  try {
+    const r = await fetch(`/api/kalshi/match_detail?ticker=${encodeURIComponent(ticker)}&threshold=0.05`);
+    data = await r.json();
+  } catch(e) {
+    document.getElementById('root').innerHTML =
+      `<div class="state-error">Failed to load: ${e.message}</div>`;
+    return;
+  }
+
+  if (data.error) {
+    document.getElementById('root').innerHTML =
+      `<div class="state-error">${esc(data.error)}</div>`;
+    return;
+  }
+
+  const eventMatches = data.matches.filter(m => m.source === 'event');
+  const postMatches  = data.matches.filter(m => m.source === 'post');
+
+  // Build Kalshi URL
+  const seriesSlug = ticker.toLowerCase().replace(/-\d{2}[a-z]{3}\d{2}.*$/i, '');
+  const titleSlug  = data.market_title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  const eventTicker = ticker.toLowerCase();
+  const kalshiUrl  = `https://kalshi.com/markets/${seriesSlug}/${titleSlug}/${eventTicker}`;
+
+  document.title = `${ticker} — Match Detail`;
+
+  const eventsHtml = eventMatches.length
+    ? eventMatches.map(renderEventMatch).join('')
+    : `<div class="state-empty">No event matches above threshold</div>`;
+
+  const postsHtml = postMatches.length
+    ? postMatches.map(renderPostMatch).join('')
+    : `<div class="state-empty">No post matches above threshold</div>`;
+
+  document.getElementById('root').innerHTML = `
+    <div class="market-hero">
+      <div class="hero-score-block">
+        <div class="hero-score">${data.overall_score.toFixed(2)}</div>
+        <div class="hero-score-label">match</div>
+      </div>
+      <div class="hero-info">
+        <div class="hero-ticker">${esc(ticker)}</div>
+        <div class="hero-title">${esc(data.market_title)}</div>
+        <div class="hero-meta">
+          <span class="hero-tag">${eventMatches.length} event signal${eventMatches.length!==1?'s':''}</span>
+          <span class="hero-tag">${postMatches.length} post signal${postMatches.length!==1?'s':''}</span>
+          <a class="hero-kalshi-link" href="${kalshiUrl}" target="_blank">↗ View on Kalshi</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">▲ Matched Events</div>
+        <div class="section-count">${eventMatches.length}</div>
+      </div>
+      <div class="match-list">${eventsHtml}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">◆ Matched Posts</div>
+        <div class="section-count">${postMatches.length}</div>
+      </div>
+      <div class="match-list">${postsHtml}</div>
+    </div>
+  `;
+}
+
+load();
+</script>
+</body>
+</html>

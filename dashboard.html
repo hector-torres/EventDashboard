@@ -1,0 +1,2830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Event Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #0a0a0a;
+      color: #d0d0d0;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-weight: 400;
+      overflow: hidden;
+    }
+
+    /* ── Page stack ── */
+    .page {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Title bar ── */
+    .title-bar {
+      width: 100%;
+      background: #111111;
+      border-bottom: 1px solid #252525;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .title-bar-text {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      color: #e2e2e2;
+      text-transform: uppercase;
+    }
+
+    .title-bar-brand {
+      position: absolute;
+      right: 32px;
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      color: #505050;
+    }
+
+    .accent-line {
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg,
+        transparent 0%, #6b0000 15%, #cc1100 40%,
+        #aa0000 60%, #5a0000 85%, transparent 100%);
+      flex-shrink: 0;
+    }
+
+    /* ── Market indices bar ── */
+    .market-bar-wrap {
+      width: 100%;
+      background: #0d0d0d;
+      border-bottom: 1px solid #1a1a1a;
+      flex-shrink: 0;
+      display: grid;
+      /* col 1 = label sidebar (narrow — vertical text), col 2 = tiles area, col 3 = updated panel */
+      grid-template-columns: 28px 1fr auto;
+      grid-template-rows: auto auto;
+    }
+
+    /* Label sidebar spans both rows */
+    .market-bar-labels {
+      grid-column: 1;
+      grid-row: 1 / 3;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1e1e1e;
+      background: #111;
+    }
+
+    .market-bar-label {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      color: #444;
+      text-transform: uppercase;
+      white-space: nowrap;
+      text-align: center;
+      padding: 8px 0;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);  /* bottom-to-top reading direction */
+    }
+
+    .market-bar-label.row1-label {
+      border-bottom: 1px solid #1e1e1e;
+      min-height: 88px;
+    }
+
+    .market-bar-label.row2-label {
+      color: #333;
+      min-height: 80px;
+    }
+
+    /* Tiles rows */
+    .market-bar-row {
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+    }
+
+    .market-bar-row.row1 {
+      grid-column: 2; grid-row: 1;
+      min-height: 88px;
+      border-bottom: 1px solid #161616;
+    }
+
+    .market-bar-row.row2 {
+      grid-column: 2; grid-row: 2;
+      min-height: 80px;
+      background: #0b0b0b;
+    }
+
+    .market-bar-row::-webkit-scrollbar { height: 2px; }
+    .market-bar-row::-webkit-scrollbar-thumb { background: #222; }
+
+    /* Updated panel spans both rows */
+    .market-updated {
+      grid-column: 3;
+      grid-row: 1 / 3;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+      border-left: 1px solid #1a1a1a;
+      min-width: 90px;
+    }
+
+    .market-updated-label {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #2e2e2e;
+      margin-bottom: 3px;
+    }
+
+    .market-updated-time {
+      font-size: 10px;
+      color: #3a3a3a;
+      letter-spacing: 0.05em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .market-tile {
+      flex: 1;
+      min-width: 155px;
+      border-right: 1px solid #1a1a1a;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      text-align: center;
+      transition: background 0.15s;
+    }
+
+    .market-tile:last-of-type { border-right: none; }
+    .market-tile:hover { background: #111; }
+
+    .market-tile.up   { border-top: 2px solid #1a5c1a; }
+    .market-tile.down { border-top: 2px solid #6b0000; }
+    .market-tile.flat { border-top: 2px solid #333; }
+    .market-tile.loading { border-top: 2px solid #222; }
+
+    .tile-top {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .tile-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #ccc;
+      text-transform: uppercase;
+    }
+
+    .tile-status {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 1px 5px;
+    }
+
+    .status-open    { color: #2a7a2a; background: rgba(30,100,30,0.15); border: 1px solid rgba(30,100,30,0.25); }
+    .status-closed  { color: #555;    background: #141414;               border: 1px solid #1e1e1e; }
+    .status-futures { color: #886633; background: rgba(120,90,30,0.15); border: 1px solid rgba(120,90,30,0.25); }
+
+    .tile-price {
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0em;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      margin: 2px 0;
+      opacity: 0.7;
+    }
+
+    .tile-price.up   { color: #3a9e3a; }
+    .tile-price.down { color: #cc2200; }
+    .tile-price.flat { color: #aaa; }
+
+    .tile-change {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+    .tile-change.up   { color: #2d7a2d; }
+    .tile-change.down { color: #aa1a00; }
+    .tile-change.flat { color: #888; }
+
+    .tile-meta {
+      display: flex;
+      gap: 10px;
+      margin-top: 5px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .tile-meta-item {
+      font-size: 10px;
+      color: #666;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    .tile-meta-item strong { color: #999; font-weight: 600; }
+
+    .tile-time {
+      font-size: 9px;
+      color: #666;
+      letter-spacing: 0.06em;
+      margin-top: 3px;
+    }
+
+    .tile-countdown {
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.04em;
+      margin-top: 2px;
+    }
+
+    .tile-countdown.closing { color: #5a3a1a; }
+    .tile-countdown.opening { color: #1a3a1a; }
+
+    .tile-sparkline {
+      display: inline-block;
+      height: 22px;
+      margin-top: 5px;
+      overflow: visible;
+    }
+    .tile-sparkline-wrap {
+      text-align: center;
+      width: 100%;
+    }
+    .sparkline-line {
+      fill: none; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .sparkline-line.up   { stroke: rgba(45,122,45,0.9); }
+    .sparkline-line.down { stroke: rgba(170,26,0,0.9); }
+    .sparkline-line.flat { stroke: rgba(80,80,80,0.8); }
+    .sparkline-fill.up   { fill: rgba(45,122,45,0.12); stroke: none; }
+    .sparkline-fill.down { fill: rgba(170,26,0,0.12); stroke: none; }
+    .sparkline-fill.flat { fill: rgba(80,80,80,0.10); stroke: none; }
+    .sparkline-open-line { stroke: rgba(160,160,160,0.45); stroke-width: 0.75; stroke-dasharray: 2.5 2; }
+
+    /* ── Market tile tooltip ─────────────────────────── */
+    .market-tile { position: relative; }
+
+    .tile-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1c1c1c;
+      border: 1px solid #2e2e2e;
+      color: #777;
+      font-size: 10px;
+      line-height: 1.55;
+      padding: 7px 11px;
+      border-radius: 3px;
+      z-index: 200;
+      pointer-events: none;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.7);
+      width: max-content;
+      max-width: 280px;
+      white-space: normal;
+    }
+    .tile-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%; left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: #2e2e2e;
+    }
+    .market-tile:hover .tile-tooltip { display: block; }
+
+
+
+    /* ── Countdown bar ── */
+    .countdown-bar {
+      width: 100%;
+      height: 2px;
+      background: #151515;
+      flex-shrink: 0;
+    }
+
+    .countdown-fill {
+      height: 100%;
+      background: #8b0000;
+      transition: width 1s linear;
+    }
+
+    /* ── 3-panel layout ── */
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1a1a1a;
+      overflow: hidden;
+      background: #0a0a0a;
+    }
+
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      padding: 13px 20px;
+      border-bottom: 1px solid #1a1a1a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: #0d0d0d;
+    }
+
+    .panel-title-group { display: flex; align-items: center; gap: 10px; flex: 1; justify-content: center; }
+
+    .panel-bar { width: 2px; height: 14px; flex-shrink: 0; }
+
+    .panel-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+    }
+
+    .panel-count {
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      color: #3a3a3a;
+      background: #141414;
+      border: 1px solid #1e1e1e;
+      padding: 2px 8px;
+    }
+
+    .panel-right { display: flex; align-items: center; gap: 10px; }
+
+    .panel-status {
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.12em;
+      color: #444;
+    }
+
+    .live-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: #cc0000;
+      animation: blink 1.4s ease infinite;
+    }
+
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+    .panel-btn {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #444;
+      background: none;
+      border: 1px solid #222;
+      padding: 3px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .panel-btn:hover { color: #888; border-color: #444; }
+
+    /* ── Keyword spike chip bar ──────────────────────── */
+    .spike-bar {
+      padding: 7px 14px 6px;
+      border-bottom: 1px solid #161616;
+      background: #0c0c0c;
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .spike-bar-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: #2e2e2e;
+      text-transform: uppercase;
+      white-space: nowrap;
+      margin-right: 2px;
+    }
+    .spike-bar-empty {
+      font-size: 10px;
+      color: #242424;
+      letter-spacing: 0.08em;
+      font-style: italic;
+    }
+    .spike-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px 2px 7px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.12s;
+      border: 1px solid #2a1a00;
+      background: #141000;
+      color: #444;
+    }
+    .spike-chip.active {
+      border-color: #664400;
+      background: rgba(100,60,0,0.18);
+      color: #cc8800;
+    }
+    .spike-chip .chip-count {
+      font-size: 10px;
+      opacity: 0.6;
+    }
+    .spike-chip .chip-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.5;
+    }
+    .panel-btn.btn-active {
+      color: #cc8800; border-color: #553300;
+      background: rgba(90,50,0,0.15);
+    }
+
+    .panel-btn.active {
+      color: #cc8800;
+      border-color: #664400;
+      background: rgba(100,60,0,0.12);
+    }
+
+    .panel-btn.toggle-medium {
+      font-size: 10px;
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .panel-body::-webkit-scrollbar { width: 2px; }
+    .panel-body::-webkit-scrollbar-thumb { background: #222; }
+
+    .panel-footer {
+      border-top: 1px solid #1a1a1a;
+      padding: 9px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: #0d0d0d;
+    }
+
+    .footer-stat {
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+      color: #383838;
+    }
+
+    .footer-stat strong { color: #555; font-weight: 600; }
+
+    /* ══ PANEL 1: FEED ══════════════════════════════ */
+
+    .feed-item {
+      padding: 13px 20px;
+      border-bottom: 1px solid #141414;
+      transition: background 0.1s;
+      animation: fadeInItem 0.25s ease;
+    }
+
+    @keyframes fadeInItem {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .feed-item:hover { background: #0f0f0f; }
+
+    .feed-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+
+    .feed-avatar {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: #1a1a1a;
+      border: 1px solid #222;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #444;
+      overflow: hidden;
+    }
+
+    .feed-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+
+    .feed-author { flex: 1; min-width: 0; }
+
+    .feed-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: #bbb;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.03em;
+    }
+
+    .feed-handle { font-size: 11px; color: #444; }
+    .feed-time   { font-size: 11px; color: #333; letter-spacing: 0.04em; flex-shrink: 0; }
+
+    .feed-badge {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 1px 5px;
+      flex-shrink: 0;
+    }
+
+    .feed-badge.breaking { background: rgba(180,0,0,0.15); color: #cc2200; border: 1px solid rgba(180,0,0,0.3); }
+    .feed-badge.normal   { background: #141414; color: #333; border: 1px solid #1e1e1e; }
+    .feed-badge.priority { background: rgba(180,120,0,0.15); color: #cc8800; border: 1px solid rgba(180,120,0,0.3); }
+    .feed-badge.repeat   { background: rgba(40,40,80,0.25); color: #4455aa; border: 1px solid rgba(60,60,120,0.35); }
+
+    .feed-text {
+      font-size: 13px;
+      font-weight: 300;
+      line-height: 1.6;
+      color: #888;
+      margin-bottom: 7px;
+      word-break: break-word;
+    }
+
+    .feed-stats { display: flex; gap: 14px; align-items: center; }
+
+    .feed-stat { font-size: 11px; color: #2e2e2e; letter-spacing: 0.05em; }
+
+    .feed-link {
+      font-size: 11px; color: #3a3a3a;
+      text-decoration: none; letter-spacing: 0.08em;
+      margin-left: auto; transition: color 0.15s;
+    }
+
+    .feed-link:hover { color: #888; }
+
+    .state-loading { padding: 48px 20px; text-align: center; }
+
+    .spinner {
+      width: 24px; height: 24px;
+      border: 1px solid #1e1e1e;
+      border-top-color: #8b0000;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 14px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .state-text {
+      font-size: 11px; font-weight: 400;
+      letter-spacing: 0.2em; text-transform: uppercase; color: #333;
+    }
+
+    .state-empty {
+      padding: 40px 20px; text-align: center;
+      font-size: 12px; letter-spacing: 0.12em; color: #2e2e2e; text-transform: uppercase;
+    }
+
+    /* ══ SPLIT FEED PANEL ══════════════════════════ */
+
+    .feed-panel-inner {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .feed-half {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* Priority half gets a warm amber left-border accent */
+    .feed-half.news-half {
+      border-left: 2px solid #5a3800;
+    }
+
+    /* Search half gets a red left-border accent */
+    .feed-half.search-half {
+      border-left: 2px solid #3a0000;
+    }
+
+    .feed-half-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 16px 8px 14px;
+      border-bottom: 1px solid #1e1e1e;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .feed-half-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    .feed-half-count {
+      font-size: 11px;
+      color: #333;
+      letter-spacing: 0.06em;
+      position: absolute;
+      right: 14px;
+    }
+
+    /* News header: dark amber tint */
+    .feed-half-header.news-header {
+      background: #120d00;
+      border-top: 1px solid #2a1a00;
+    }
+
+    /* Search header: dark red tint */
+    .feed-half-header.search-header {
+      background: #0e0505;
+      border-top: 1px solid #1e0808;
+    }
+
+    /* Search Feed info button + tooltip */
+    .sf-info-btn {
+      font-size: 10px; color: #551100; cursor: pointer;
+      user-select: none; opacity: 0.7; line-height: 1;
+      transition: opacity 0.15s;
+    }
+    .sf-info-btn:hover { opacity: 1; color: #cc4400; }
+    .sf-tooltip {
+      display: none; position: absolute; z-index: 200;
+      left: 8px; top: calc(100% + 4px);
+      width: 260px;
+      background: #0f0f0f; border: 1px solid #2a1a0a;
+      border-radius: 4px; padding: 10px 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+      pointer-events: none;
+    }
+    .sf-tooltip.visible { display: block; }
+    .sf-tooltip-title {
+      font-size: 10px; font-weight: 700; color: #cc4400;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .sf-tooltip-body {
+      font-size: 10px; color: #888; line-height: 1.55;
+    }
+
+    /* Thick divider between the two halves */
+    .feed-half-divider {
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, #1a0d00 0%, #1e1010 50%, #0a0a0a 100%);
+      flex-shrink: 0;
+      border-top: 1px solid #2a1a00;
+      border-bottom: 1px solid #200808;
+    }
+
+    .feed-half-body {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .feed-half-body::-webkit-scrollbar { width: 2px; }
+    .feed-half-body::-webkit-scrollbar-thumb { background: #222; }
+
+    .feed-half-empty {
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      color: #282828;
+      text-transform: uppercase;
+      line-height: 1.6;
+    }
+
+    /* ══ PANEL 2: EVENTS ════════════════════════════ */
+
+    .event-item {
+      padding: 13px 20px 13px 22px;
+      border-bottom: 1px solid #141414;
+      position: relative;
+      transition: background 0.1s;
+      animation: fadeInItem 0.25s ease;
+      cursor: pointer;
+    }
+
+    .event-item:hover { background: #0f0f0f; }
+
+    .event-sev-line { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
+    .sev-CRITICAL { background: #cc0020; }
+    /* P6: Event lifecycle status badges */
+    .evt-status-badge {
+      display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+      padding: 1px 5px; border-radius: 2px; margin-left: 6px; vertical-align: middle;
+      text-transform: uppercase;
+    }
+    .evt-status-breaking  { background: rgba(204,0,32,0.18); color: #ff4455; border: 1px solid rgba(204,0,32,0.4); animation: blink-badge 1.4s ease-in-out infinite; }
+    .evt-status-developing{ background: rgba(200,130,0,0.18); color: #ffaa33; border: 1px solid rgba(200,130,0,0.4); }
+    .evt-status-active    { background: rgba(30,80,30,0.18);  color: #66cc66; border: 1px solid rgba(30,80,30,0.4); }
+    .evt-status-stale     { background: rgba(50,50,50,0.18);  color: #555;    border: 1px solid rgba(80,80,80,0.3); }
+    @keyframes blink-badge { 0%,100%{opacity:1} 50%{opacity:0.45} }
+    .sev-HIGH     { background: #cc5500; }
+    .sev-MEDIUM   { background: #997700; }
+
+    .event-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+
+    .event-title { font-size: 13px; font-weight: 600; color: #bbb; line-height: 1.4; flex: 1; }
+
+    .event-sev {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      padding: 1px 5px; flex-shrink: 0;
+    }
+
+    .sev-badge-CRITICAL { background: rgba(180,0,20,0.15);  color: #cc0020; border: 1px solid rgba(180,0,20,0.3); }
+    .sev-badge-HIGH     { background: rgba(180,80,0,0.15);  color: #cc5500; border: 1px solid rgba(180,80,0,0.3); }
+    .sev-badge-MEDIUM   { background: rgba(140,110,0,0.15); color: #aa8800; border: 1px solid rgba(140,110,0,0.3); }
+
+    .event-samples { margin-bottom: 7px; }
+
+    .event-sample {
+      font-size: 14px; font-weight: 300;
+      color: #666; line-height: 1.6;
+      border-left: 1px solid #222;
+      padding-left: 8px; margin-bottom: 4px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      letter-spacing: 0.01em;
+    }
+
+    .event-meta { display: flex; gap: 12px; align-items: center; }
+    .event-tag  { font-size: 11px; color: #333; letter-spacing: 0.05em; }
+    .event-tag strong { color: #555; }
+
+    .event-expand-btn {
+      font-size: 10px; color: #2a2a2a; letter-spacing: 0.06em;
+      background: none; border: none; cursor: pointer; padding: 0;
+      margin-left: auto; user-select: none; transition: color 0.1s;
+      pointer-events: all;
+    }
+    .event-expand-btn:hover { color: #666; }
+
+    .event-posts {
+      display: none;
+      margin-top: 8px;
+      border-top: 1px solid #1a1a1a;
+      padding-top: 6px;
+    }
+    .event-item.expanded .event-posts { display: block; }
+
+    .event-post-row {
+      display: flex; gap: 8px; padding: 5px 0;
+      border-bottom: 1px solid #141414; align-items: flex-start;
+    }
+    .event-post-row:last-child { border-bottom: none; }
+    .event-post-handle {
+      font-size: 10px; color: #3a3a3a; white-space: nowrap;
+      flex-shrink: 0; padding-top: 2px;
+    }
+    .event-post-handle.news-src { color: #885500; }
+    .event-post-text {
+      font-size: 13px; color: #555; line-height: 1.5; flex: 1; min-width: 0;
+    }
+    .event-post-link {
+      font-size: 11px; color: #2a2a2a; text-decoration: none;
+      flex-shrink: 0; padding-top: 2px;
+    }
+    .event-post-link:hover { color: #888; }
+
+    /* ══ PANEL 3: KALSHI ════════════════════════════ */
+
+    /* Sub-tab bar */
+    /* Sub-tabs */
+    .k-tabs {
+      display: flex; border-bottom: 1px solid #1a1a1a;
+      flex-shrink: 0; background: #0d0d0d;
+    }
+    .k-tab {
+      flex: 1; padding: 9px 0;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #333; text-align: center; cursor: pointer;
+      border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+    }
+    .k-tab:hover { color: #666; }
+    .k-tab.active { color: #2255cc; border-bottom-color: #2255cc; }
+
+    /* ── Browse search bar ─────────────────── */
+    .k-search-bar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px;
+      border-bottom: 1px solid #161616;
+      background: #0c0c0c;
+      flex-shrink: 0;
+    }
+    .k-search-input {
+      flex: 1; background: #111; border: 1px solid #1e1e1e;
+      color: #ccc; font-size: 10px; font-family: inherit;
+      padding: 3px 8px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .k-search-input::placeholder { color: #333; }
+    .k-search-input:focus { border-color: #2a3a6a; }
+    .k-search-clear {
+      font-size: 11px; color: #333; cursor: pointer; padding: 0 2px;
+      transition: color 0.1s; background: none; border: none; line-height: 1;
+    }
+    .k-search-clear:hover { color: #888; }
+
+    /* ── Sort strip ─────────────────────── */
+    .k-sort-strip {
+      display: flex; align-items: center; gap: 0;
+      padding: 4px 10px;
+      border-bottom: 1px solid #161616;
+      background: #0c0c0c;
+      flex-shrink: 0;
+    }
+    .k-sort-label {
+      font-size: 8px; font-weight: 700; letter-spacing: 0.18em;
+      text-transform: uppercase; color: #444; margin-right: 8px;
+    }
+    .k-sort-btn {
+      font-size: 9px; font-weight: 600; letter-spacing: 0.06em;
+      color: #444; background: none; border: none; cursor: pointer;
+      padding: 2px 7px; transition: color 0.1s; font-family: inherit;
+    }
+    .k-sort-btn:hover { color: #888; }
+    .k-sort-btn.active { color: #4477dd; }
+
+    /* ── Browse layout: 3 columns ─────────── */
+    .k-browse {
+      flex: 1; display: flex; overflow: hidden; min-height: 0;
+    }
+    /* Column shared styles */
+    .k-col {
+      display: flex; flex-direction: column; overflow: hidden;
+      border-right: 1px solid #141414;
+    }
+    .k-col:last-child { border-right: none; }
+    .k-col-header {
+      font-size: 8px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
+      color: #555; padding: 8px 12px 6px; border-bottom: 1px solid #141414;
+      background: #0b0b0b; flex-shrink: 0;
+    }
+    .k-col-scroll { flex: 1; overflow-y: auto; }
+
+    /* Category column */
+    .k-col-cat  { width: 110px; flex-shrink: 0; }
+    .k-cat-row {
+      padding: 7px 12px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+      color: #777; cursor: pointer; border-bottom: 1px solid #111;
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      transition: background 0.1s, color 0.1s;
+    }
+    .k-cat-row:hover { background: #0f0f0f; color: #bbb; }
+    .k-cat-row.active { background: rgba(20,40,120,0.18); color: #4477dd; }
+    .k-cat-count {
+      font-size: 9px; font-weight: 700; color: #222;
+      font-variant-numeric: tabular-nums;
+    }
+    .k-cat-row.active .k-cat-count { color: #2a4a99; }
+
+    /* Series column */
+    .k-col-series { flex: 1; min-width: 0; }
+    .k-series-row {
+      padding: 8px 12px; border-bottom: 1px solid #111;
+      cursor: pointer; transition: background 0.1s;
+    }
+    .k-series-row:hover { background: #0f0f0f; }
+    .k-series-row.active { background: rgba(20,40,120,0.14); }
+    .k-series-title {
+      font-size: 11px; font-weight: 600; color: #888; line-height: 1.35;
+    }
+    .k-series-row.active .k-series-title { color: #5588ee; }
+    .k-series-meta {
+      font-size: 9px; color: #555; margin-top: 2px; letter-spacing: 0.04em;
+    }
+
+    /* Markets column */
+    .k-col-markets { flex: 1.4; min-width: 0; display: flex; flex-direction: column; }
+
+    /* Slim price/days filter bar above markets */
+    .k-mkt-filters {
+      padding: 7px 12px; border-bottom: 1px solid #141414;
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0; background: #0b0b0b;
+    }
+    .k-filter-label {
+      font-size: 8px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #666; flex-shrink: 0;
+    }
+    .k-filter-value {
+      font-size: 9px; color: #777; white-space: nowrap; flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* range slider */
+    .k-range-wrap { flex: 1; display: flex; align-items: center; position: relative; height: 16px; }
+    .k-range-track { flex: 1; height: 2px; background: #1e1e1e; position: relative; border-radius: 1px; }
+    .k-range-fill  { position: absolute; height: 100%; background: #2255cc; border-radius: 1px; }
+    input[type=range].k-slider {
+      position: absolute; width: 100%; margin: 0;
+      -webkit-appearance: none; appearance: none;
+      height: 2px; background: transparent; cursor: pointer; outline: none;
+      pointer-events: none;
+    }
+    input[type=range].k-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 10px; height: 10px;
+      background: #2255cc; border-radius: 50%;
+      border: 1px solid #3366ee; cursor: pointer; pointer-events: all;
+    }
+    input[type=range].k-slider::-moz-range-thumb {
+      width: 10px; height: 10px; background: #2255cc; border-radius: 50%;
+      border: 1px solid #3366ee; cursor: pointer;
+    }
+    input[type=range].k-slider.single { pointer-events: all; }
+    .k-slider-divider { width: 1px; height: 14px; background: #1e1e1e; flex-shrink: 0; }
+    #k-conf-fill { left: 0 !important; }
+
+    /* market card */
+    .k-market {
+      padding: 9px 12px; border-bottom: 1px solid #111;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .k-market:hover { background: #0f0f0f; }
+    .k-market-top { display: flex; align-items: center; gap: 8px; }
+    .k-market-prob {
+      font-size: 18px; font-weight: 700; color: #999;
+      letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+      flex-shrink: 0; min-width: 32px;
+    }
+    .k-match-conf {
+      display: flex; flex-direction: column; align-items: center;
+      min-width: 36px; gap: 1px;
+    }
+    .k-conf-num {
+      font-size: 16px; font-weight: 700; color: #4a8fff;
+      letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .k-conf-label {
+      font-size: 8px; font-weight: 600; color: #2a4a88;
+      text-transform: uppercase; letter-spacing: 0.12em;
+      line-height: 1;
+    }
+    .k-market-title {
+      flex: 1; font-size: 11px; font-weight: 600; color: #999;
+      line-height: 1.4; min-width: 0;
+    }
+    .k-market-prices { display: flex; gap: 4px; flex-shrink: 0; }
+    .k-price-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .k-price-col-label {
+      font-size: 8px; font-weight: 700; letter-spacing: 0.15em;
+      text-transform: uppercase; color: #2a2a2a;
+    }
+    .k-price-box {
+      font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+      padding: 2px 6px; min-width: 30px; text-align: center; border: 1px solid transparent;
+    }
+    .k-price-box.yes { color: #33bb66; background: rgba(20,80,35,0.25); border-color: rgba(30,100,50,0.4); }
+    .k-price-box.no  { color: #cc4433; background: rgba(80,20,15,0.25); border-color: rgba(110,30,20,0.4); }
+    .k-market-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .k-meta-tag {
+      font-size: 8px; color: #666; letter-spacing: 0.06em;
+      background: #111; padding: 1px 4px; border: 1px solid #1a1a1a;
+    }
+    .k-score-bar { flex: 1; height: 2px; background: #1a1a1a; min-width: 30px; max-width: 70px; }
+    .k-score-fill { height: 100%; background: #2255cc; }
+    .k-market-link { font-size: 9px; color: #555; text-decoration: none; transition: color 0.1s; }
+    .k-market-link:hover { color: #4477dd; }
+    .k-why-link { color: #2a4a22 !important; }
+    .k-why-link:hover { color: #4a8a3a !important; }
+
+    /* pagination strip inside markets column */
+    .k-pagination {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 7px 12px; border-top: 1px solid #141414;
+      flex-shrink: 0; background: #0d0d0d;
+    }
+    .k-page-btn {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      color: #666; background: none; border: 1px solid #2a2a2a;
+      padding: 2px 7px; cursor: pointer; transition: color 0.1s, border-color 0.1s;
+    }
+    .k-page-btn:hover:not(:disabled) { color: #888; border-color: #444; }
+    .k-page-btn:disabled { opacity: 0.25; cursor: default; }
+    .k-page-info { font-size: 9px; color: #777; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
+
+    /* Match tab controls */
+    .k-filters {
+      padding: 10px 14px; border-bottom: 1px solid #141414;
+      display: flex; flex-direction: column; gap: 9px;
+      flex-shrink: 0; background: #0b0b0b;
+    }
+    .k-filter-row { display: flex; align-items: center; gap: 10px; }
+    #k-match-controls .k-filter-label { width: 74px; }
+
+    /* status bar at bottom of panel */
+    .k-status-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 14px; border-top: 1px solid #141414;
+      background: #0a0a0a; flex-shrink: 0;
+    }
+    .k-status-text { font-size: 10px; color: #666; letter-spacing: 0.06em; }
+    .k-status-text.ok { color: #1a4a1a; }
+    .k-status-text.err { color: #4a1a1a; }
+    .k-refresh-btn {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #2a2a2a; background: none; border: 1px solid #1e1e1e;
+      padding: 2px 7px; cursor: pointer; transition: color 0.1s;
+    }
+    .k-refresh-btn:hover { color: #666; border-color: #333; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Title bar -->
+  <div class="title-bar">
+    <div class="title-bar-text">Event Dashboard</div>
+    <div class="title-bar-brand">KLTT Holdings</div>
+  </div>
+  <div class="accent-line"></div>
+
+  <!-- Market bar: CSS grid — label sidebar | tiles | updated panel -->
+  <div class="market-bar-wrap">
+    <div class="market-bar-labels">
+      <div class="market-bar-label row1-label">Equities</div>
+      <div class="market-bar-label row2-label">Commodities</div>
+    </div>
+    <div class="market-bar-row row1" id="market-bar-row1"></div>
+    <div class="market-bar-row row2" id="market-bar-row2"></div>
+    <div class="market-updated">
+      <div class="market-updated-label">Updated</div>
+      <div class="market-updated-time" id="market-updated-time">—</div>
+    </div>
+  </div>
+
+  <!-- Countdown bar -->
+  <div class="countdown-bar">
+    <div class="countdown-fill" id="countdownFill" style="width:100%"></div>
+  </div>
+
+  <!-- 3 panels -->
+  <div class="panels">
+
+    <!-- PANEL 1: FEED (split: priority top / search bottom) -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-bar" style="background:#8b0000"></div>
+          <div class="panel-title" style="color:#aa2200">Bluesky Feed</div>
+          <div class="panel-count" id="feed-count">0 posts</div>
+        </div>
+        <div class="panel-right">
+          <div class="live-dot"></div>
+          <div class="panel-status" id="feed-status">Connecting…</div>
+        </div>
+      </div>
+
+      <div class="feed-panel-inner">
+
+        <!-- Top half: priority accounts -->
+        <div class="feed-half news-half">
+          <div class="feed-half-header news-header">
+            <div class="feed-half-title" style="color:#c07820">📰 News Accounts</div>
+            <div class="feed-half-count" id="news-count">0 posts</div>
+          </div>
+          <div class="feed-half-body" id="news-body">
+            <div class="feed-half-empty" id="news-empty">
+              No news accounts loaded.<br>Add handles to accounts.txt
+            </div>
+          </div>
+        </div>
+
+        <div class="feed-half-divider"></div>
+
+        <!-- Bottom half: search-based posts -->
+        <div class="feed-half search-half">
+          <div class="feed-half-header search-header">
+            <div class="feed-half-title" style="color:#882200;display:flex;align-items:center;gap:5px">
+              ⌕ Search Feed
+              <span class="sf-info-btn" id="sf-info-btn" onclick="sfToggleTooltip(event)">ⓘ</span>
+              <div class="sf-tooltip" id="sf-tooltip">
+                <div class="sf-tooltip-title">What is the Search Feed?</div>
+                <div class="sf-tooltip-body" id="sf-tooltip-body">Queries Bluesky in real-time using the spike keywords detected above. Each keyword chip becomes a live search — posts matching those terms are pulled here as they appear on Bluesky.</div>
+              </div>
+            </div>
+            <div class="feed-half-count" id="search-count">0 posts</div>
+          </div>
+          <div class="feed-half-body" id="search-body">
+            <div class="state-loading" id="feed-loading">
+              <div class="spinner"></div>
+              <div class="state-text">Connecting to Bluesky</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="panel-footer">
+        <div class="footer-stat">Updated: <strong id="feed-updated">—</strong></div>
+        <div class="footer-stat">Feeds: <strong id="feed-sources">3</strong></div>
+      </div>
+    </div>
+
+    <!-- PANEL 2: EVENTS -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-bar" style="background:#8b4400"></div>
+          <div class="panel-title" style="color:#aa5500">Detected Events</div>
+          <div class="panel-count" id="events-count">0 events</div>
+        </div>
+        <div class="panel-right">
+          <button class="panel-btn" onclick="clearEvents()">Clear</button>
+        </div>
+      </div>
+      <!-- Spiked keyword chip bar -->
+      <div class="spike-bar" id="spike-bar">
+        <span class="spike-bar-label">Spikes</span>
+        <span class="spike-bar-empty" id="spike-bar-empty">none in last 15m</span>
+      </div>
+      <div class="panel-body" id="events-body">
+        <div class="state-empty" id="events-empty">Monitoring for events…</div>
+      </div>
+      <div class="panel-footer">
+        <div class="footer-stat">Critical: <strong id="evt-critical" style="color:#8b0010">0</strong></div>
+        <div class="footer-stat">High: <strong id="evt-high" style="color:#885500">0</strong></div>
+        <div class="footer-stat" onclick="toggleMedium()" style="cursor:pointer" title="Click to show/hide Medium events">Medium: <strong id="evt-medium" style="color:#776600;opacity:0.4">0</strong></div>
+      </div>
+    </div>
+
+    <!-- PANEL 3: KALSHI MARKETS -->
+    <div class="panel" id="kalshi-panel">
+
+      <!-- Header -->
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-bar" style="background:#003388"></div>
+          <div class="panel-title" style="color:#2255aa">Kalshi Markets</div>
+          <div class="panel-count" id="kalshi-count">—</div>
+        </div>
+      </div>
+
+      <!-- Sub-tab bar: Browse | Semantic Match -->
+      <div class="k-tabs">
+        <div class="k-tab active" id="ktab-filter" onclick="kSwitchTab('filter')">Browse</div>
+        <div class="k-tab"        id="ktab-match"  onclick="kSwitchTab('match')">Semantic Match</div>
+      </div>
+
+      <!-- BROWSE: search bar (above 3-col layout) -->
+      <div class="k-search-bar" id="k-browse-search-bar">
+        <input class="k-search-input" id="k-search-input" placeholder="Search markets…" oninput="kOnSearch()" autocomplete="off">
+        <button class="k-search-clear" id="k-search-clear" onclick="kClearSearch()" style="display:none">✕</button>
+      </div>
+
+      <!-- BROWSE TAB: 3-column layout -->
+      <div class="k-browse" id="k-browse-panel">
+
+        <!-- Column 1: Categories -->
+        <div class="k-col k-col-cat">
+          <div class="k-col-header">Category</div>
+          <div class="k-col-scroll" id="k-cat-list">
+            <div style="padding:12px;font-size:10px;color:#222">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Column 2: Series -->
+        <div class="k-col k-col-series">
+          <div class="k-col-header" id="k-series-header">Series</div>
+          <div class="k-col-scroll" id="k-series-list">
+            <div style="padding:12px;font-size:10px;color:#222">← Select a category</div>
+          </div>
+        </div>
+
+        <!-- Column 3: Markets -->
+        <div class="k-col k-col-markets">
+          <!-- Slim price + days filter strip -->
+          <div class="k-mkt-filters">
+            <div class="k-filter-label">Price</div>
+            <div class="k-range-wrap">
+              <div class="k-range-track">
+                <div class="k-range-fill" id="k-price-fill"></div>
+                <input type="range" class="k-slider" id="k-price-min" min="1" max="99" value="1"
+                       oninput="kUpdatePriceRange()">
+                <input type="range" class="k-slider" id="k-price-max" min="1" max="99" value="99"
+                       oninput="kUpdatePriceRange()">
+              </div>
+            </div>
+            <div class="k-filter-value" id="k-price-label">Any</div>
+            <div class="k-slider-divider"></div>
+            <div class="k-filter-label">Days</div>
+            <div class="k-range-wrap">
+              <div class="k-range-track">
+                <div class="k-range-fill" id="k-days-fill"></div>
+                <input type="range" class="k-slider" id="k-days-min" min="0" max="100" value="0"
+                       oninput="kUpdateDaysRange()">
+                <input type="range" class="k-slider" id="k-days-max" min="0" max="100" value="100"
+                       oninput="kUpdateDaysRange()">
+              </div>
+            </div>
+            <div class="k-filter-value" id="k-days-label">Any</div>
+          </div>
+          <!-- Sort strip -->
+          <div class="k-sort-strip">
+            <div class="k-sort-label">Sort</div>
+            <button class="k-sort-btn active" id="ksort-default" onclick="kSetSort('default')">Default</button>
+            <button class="k-sort-btn" id="ksort-price-asc" onclick="kSetSort('price-asc')">Price ↑</button>
+            <button class="k-sort-btn" id="ksort-price-desc" onclick="kSetSort('price-desc')">Price ↓</button>
+            <button class="k-sort-btn" id="ksort-close-asc" onclick="kSetSort('close-asc')">Closing ↑</button>
+            <button class="k-sort-btn" id="ksort-close-desc" onclick="kSetSort('close-desc')">Closing ↓</button>
+          </div>
+          <!-- Market list -->
+          <div class="k-col-scroll" id="k-market-body">
+            <div class="state-empty" id="k-empty" style="padding:16px;font-size:10px;color:#222">← Select a series</div>
+          </div>
+          <!-- Pagination -->
+          <div class="k-pagination" id="k-pagination">
+            <button class="k-page-btn" id="k-prev-btn" onclick="kChangePage(-1)" disabled>← Prev</button>
+            <span class="k-page-info" id="k-page-info">Page 1 of 1</span>
+            <button class="k-page-btn" id="k-next-btn" onclick="kChangePage(1)" disabled>Next →</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- MATCH CONTROLS (shown on Match tab) -->
+      <div class="k-filters" id="k-match-controls" style="display:none">
+        <div class="k-filter-row">
+          <div class="k-filter-label">Confidence</div>
+          <div class="k-range-wrap" style="flex:1">
+            <div class="k-range-track">
+              <div class="k-range-fill" id="k-conf-fill" style="left:0;width:25%"></div>
+              <input type="range" class="k-slider single" id="k-conf-slider"
+                     min="5" max="60" step="5" value="15"
+                     oninput="kUpdateConfidence()">
+            </div>
+          </div>
+          <div class="k-filter-value" id="k-conf-value" style="min-width:56px">0.15</div>
+        </div>
+        <div class="k-filter-row" style="justify-content:flex-end">
+          <div class="k-filter-value" id="k-match-corpus" style="color:#666;font-style:italic">
+            Initializing corpus…
+          </div>
+        </div>
+      </div>
+
+      <!-- Match tab: same 3-column layout, hidden until match tab active -->
+      <div class="k-browse" id="k-match-body" style="display:none">
+
+        <!-- Col 1: Matched categories -->
+        <div class="k-col k-col-cat">
+          <div class="k-col-header">Category</div>
+          <div class="k-col-scroll" id="km-cat-list">
+            <div style="padding:12px;font-size:10px;color:#333">Run a match…</div>
+          </div>
+        </div>
+
+        <!-- Col 2: Matched series -->
+        <div class="k-col k-col-series">
+          <div class="k-col-header" id="km-series-header">Series</div>
+          <div class="k-col-scroll" id="km-series-list">
+            <div style="padding:12px;font-size:10px;color:#333">← Select a category</div>
+          </div>
+        </div>
+
+        <!-- Col 3: Matched markets -->
+        <div class="k-col k-col-markets">
+          <!-- Sort strip for match tab -->
+          <div class="k-sort-strip" id="km-sort-strip">
+            <div class="k-sort-label">Sort</div>
+            <button class="k-sort-btn active" id="kmsort-conf"      onclick="kSetMatchSort('conf')">Confidence</button>
+            <button class="k-sort-btn"        id="kmsort-prob-desc" onclick="kSetMatchSort('prob-desc')">Prob ↓</button>
+            <button class="k-sort-btn"        id="kmsort-prob-asc"  onclick="kSetMatchSort('prob-asc')">Prob ↑</button>
+          </div>
+          <div class="k-col-scroll" id="km-market-body">
+            <div id="k-match-empty" style="padding:16px 18px;font-size:10px;line-height:1.7;color:#555;max-width:340px">
+              <div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px">Semantic Match</div>
+              <div style="margin-bottom:10px;color:#444">Compares detected events and recent posts against every open Kalshi market using token overlap and character bigram similarity.</div>
+              <div style="color:#3a3a3a;font-style:italic">Switch to this tab after events are detected to see matching markets. Works best when events contain proper nouns — "Fed", "CPI", "Bitcoin" — that also appear in Kalshi market titles.</div>
+            </div>
+          </div>
+          <div class="k-pagination" id="k-match-pagination">
+            <button class="k-page-btn" id="k-prev-btn-m" onclick="kChangePageMatch(-1)" disabled>← Prev</button>
+            <span class="k-page-info" id="k-page-info-m">Page 1 of 1</span>
+            <button class="k-page-btn" id="k-next-btn-m" onclick="kChangePageMatch(1)" disabled>Next →</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Status / refresh bar -->
+      <div class="k-status-bar">
+        <span class="k-status-text" id="k-status-text">Initializing…</span>
+        <button class="k-refresh-btn" onclick="kManualRefresh()">↻ Refresh</button>
+      </div>
+
+    </div>
+
+  </div><!-- /panels -->
+</div><!-- /page -->
+
+<script>
+const API_BASE  = '';
+const POLL_SECS = 30;
+let countdown     = POLL_SECS;
+let seenPostUris  = new Set();
+let seenEventIds  = new Set();
+// keyword chip state: Map<keyword, bool> true=visible
+const spikeKeywords   = new Map();
+const spikeDetectedAt = new Map();
+const SPIKE_WINDOW_MS = 15 * 60 * 1000;
+
+// ── Duplicate / repeat detection ─────────────────────────────────────────────
+// Rolling 4-hour window of post/event fingerprints for near-duplicate detection
+const DUPE_WINDOW_MS  = 4 * 60 * 60 * 1000;
+// Map<fingerprint, timestamp> — text fingerprints seen in last 4 hours
+const seenFingerprints = new Map();
+
+// Simple fingerprint: lowercase, strip punctuation/spaces, take first 80 chars
+function fingerprint(text) {
+  return (text || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 80);
+}
+
+// Returns true if this text is a substantial repeat of something seen in last 4h.
+// Also registers the fingerprint if new.
+function checkAndRegisterDupe(text, ts) {
+  const now = ts ? new Date(ts).getTime() : Date.now();
+  // Prune old entries
+  for (const [fp, t] of seenFingerprints.entries()) {
+    if (now - t > DUPE_WINDOW_MS) seenFingerprints.delete(fp);
+  }
+  const fp = fingerprint(text);
+  if (!fp) return false;
+  // Check overlap with all stored fingerprints (Jaccard-like on 8-char ngrams)
+  const isDupe = isNearDuplicate(fp);
+  if (!isDupe) seenFingerprints.set(fp, now);
+  return isDupe;
+}
+
+function isNearDuplicate(fp) {
+  if (fp.length < 20) return false;
+  // Build ngrams of length 8 from the new fp
+  const ngrams = new Set();
+  for (let i = 0; i <= fp.length - 8; i++) ngrams.add(fp.slice(i, i + 8));
+  for (const existing of seenFingerprints.keys()) {
+    if (Math.abs(existing.length - fp.length) > fp.length * 0.4) continue;
+    let matches = 0;
+    for (const ng of ngrams) if (existing.includes(ng)) matches++;
+    const similarity = matches / ngrams.size;
+    if (similarity >= 0.6) return true;  // 60% ngram overlap = repeat
+  }
+  return false;
+}
+
+// ── Countdown ─────────────────────────────────────────
+setInterval(() => {
+  countdown--;
+  if (countdown <= 0) { countdown = POLL_SECS; fetchAll(); }
+  document.getElementById('countdownFill').style.width = ((countdown / POLL_SECS) * 100) + '%';
+}, 1000);
+
+// ── Helpers ───────────────────────────────────────────
+function relTime(iso) {
+  if (!iso) return '';
+  const d = (Date.now() - new Date(iso)) / 1000;
+  if (d < 60)    return Math.round(d) + 's ago';
+  if (d < 3600)  return Math.round(d / 60) + 'm ago';
+  if (d < 86400) return Math.round(d / 3600) + 'h ago';
+  return new Date(iso).toLocaleDateString();
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function isBreaking(text) {
+  if (!text) return false;
+  const t = text.toLowerCase();
+  // Require explicit breaking-news phrases or unambiguous single-word signals.
+  // "breaking" alone is NOT sufficient — must be "breaking news", "breaking:", etc.
+  const phrases = [
+    'breaking news', 'breaking:', 'breaking —', 'breaking--',
+    'just broke', 'shots fired', 'mass shooting', 'active shooter',
+    'state of emergency', 'amber alert', 'martial law',
+    'confirmed dead', 'multiple casualties',
+  ];
+  if (phrases.some(p => t.includes(p))) return true;
+  // Unambiguous single words (word-boundary matched)
+  return /\b(earthquake|tsunami|hurricane|tornado|explosion|evacuation)\b/i.test(text);
+}
+
+function fmt(n, decimals = 2) {
+  if (n == null) return '—';
+  return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+// ── Live tile countdown ────────────────────────────────
+// Stores { secs, cls, ts } per tile id; ticks every second
+const _tileCountdowns = {};
+
+function fmtSecs(s) {
+  if (s <= 0) return '—';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0)  return `${h}h ${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s`;
+  if (m > 0)  return `${m}m ${String(sec).padStart(2,'0')}s`;
+  return `${sec}s`;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [tileId, cd] of Object.entries(_tileCountdowns)) {
+    const idxId = tileId.replace('tile-', '');
+    const el    = document.getElementById(`cd-${idxId}`);
+    if (!el) continue;
+    const elapsed = Math.floor((now - cd.ts) / 1000);
+    const remaining = cd.secs - elapsed;
+    const suffix = el.dataset.suffix || '';
+    if (remaining <= 0) {
+      el.innerHTML = '—';
+    } else {
+      el.innerHTML = fmtSecs(remaining) + (suffix ? `<span style="font-size:8px;font-weight:400;letter-spacing:0.08em;opacity:0.7;margin-left:3px">${suffix}</span>` : '');
+    }
+  }
+}, 1000);
+
+// ── Market tile render ────────────────────────────────
+function renderSparkline(pts, dir, openPrice, labelEl) {
+  if (!pts || pts.length < 2) return '';
+  const W = (labelEl && labelEl.offsetWidth) ? labelEl.offsetWidth : 100;
+  const H = 24, pad = 1.5;
+  const mn = Math.min(...pts), mx = Math.max(...pts);
+  const range = mx - mn || 1;
+  const xs = pts.map((_, i) => pad + (i / (pts.length - 1)) * (W - pad * 2));
+  const ys = pts.map(v => H - pad - ((v - mn) / range) * (H - pad * 2));
+  const linePts = xs.map((x,i) => x.toFixed(1)+','+ys[i].toFixed(1)).join(' ');
+
+  // Filled polygon: line pts + bottom-right + bottom-left corner to close area
+  const fillPts = linePts
+    + ` ${xs[xs.length-1].toFixed(1)},${(H-pad).toFixed(1)}`
+    + ` ${xs[0].toFixed(1)},${(H-pad).toFixed(1)}`;
+
+  // Horizontal dotted line at open price level
+  let openLine = '';
+  if (openPrice != null && openPrice >= mn && openPrice <= mx) {
+    const oy = (H - pad - ((openPrice - mn) / range) * (H - pad * 2)).toFixed(1);
+    openLine = `<line class="sparkline-open-line" x1="${pad.toFixed(1)}" y1="${oy}" x2="${(W-pad).toFixed(1)}" y2="${oy}" />`;
+  }
+
+  return `<svg class="tile-sparkline" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    ${openLine}
+    <polygon class="sparkline-fill ${dir}" points="${fillPts}" />
+    <polyline class="sparkline-line ${dir}" points="${linePts}" />
+  </svg>`;
+}
+
+function renderTile(idx) {
+  const dir    = idx.direction || 'flat';
+  const isOpen = idx.is_open;
+  const sym    = idx.currency_sym || '';
+
+  let statusHTML;
+  if (idx.always_open) {
+    statusHTML = `<span class="tile-status status-open">24/7</span>`;
+  } else if (idx.always_futures) {
+    statusHTML = `<span class="tile-status status-futures">Futures</span>`;
+  } else if (isOpen) {
+    statusHTML = `<span class="tile-status status-open">Open</span>`;
+  } else if (idx.futures) {
+    statusHTML = `<span class="tile-status status-futures">Futures</span>`;
+  } else {
+    statusHTML = `<span class="tile-status status-closed">Closed</span>`;
+  }
+
+  const displayPrice = (!isOpen && idx.futures) ? idx.futures.price     : idx.price;
+  const displayDir   = (!isOpen && idx.futures) ? idx.futures.direction  : dir;
+  const displayChg   = (!isOpen && idx.futures) ? idx.futures.change     : idx.change;
+  const displayPct   = (!isOpen && idx.futures) ? idx.futures.change_pct : idx.change_pct;
+  const sign = displayChg >= 0 ? '+' : '';
+
+  // Build time label — strip underscores from timezone names (e.g. New_York -> New York)
+  const cleanTz = s => (s || '').replace(/_/g, ' ');
+
+  let timeLabel = '';
+  let cdSecs    = 0;
+  let cdClass   = '';
+  if (isOpen && idx.time_to_close) {
+    timeLabel = `Closes ${cleanTz(idx.time_to_close.label || idx.time_to_close)}`;
+    cdSecs    = idx.time_to_close.seconds || 0;
+    cdClass   = 'closing';
+  } else if (!isOpen && idx.next_open) {
+    timeLabel = `Opens ${cleanTz(idx.next_open.label || idx.next_open)}`;
+    cdSecs    = idx.next_open.seconds || 0;
+    cdClass   = 'opening';
+  }
+
+  const tileId = `tile-${idx.id}`;
+  if (cdSecs > 0) {
+    // Register this tile for live countdown ticking
+    _tileCountdowns[tileId] = { secs: cdSecs, cls: cdClass, ts: Date.now() };
+  }
+
+  const cdSuffix = cdClass === 'closing' ? 'until close' : cdClass === 'opening' ? 'until open' : '';
+  const countdownHTML = cdSecs > 0
+    ? `<div class="tile-countdown ${cdClass}" id="cd-${idx.id}" data-suffix="${cdSuffix}">${fmtSecs(cdSecs)}<span style="font-size:8px;font-weight:400;letter-spacing:0.08em;opacity:0.7;margin-left:3px">${cdSuffix ? ' ' + cdSuffix : ''}</span></div>`
+    : '';
+
+  const tooltipHTML = idx.tooltip
+    ? `<div class="tile-tooltip">${esc(idx.tooltip)}</div>`
+    : '';
+
+  return `
+    <div class="market-tile ${displayDir}" id="${tileId}">
+      ${tooltipHTML}
+      <div style="width:100%">
+        <div class="tile-top">
+          <div class="tile-label" id="tile-${idx.id}-lbl">${idx.label}</div>
+          ${statusHTML}
+        </div>
+        <div class="tile-change ${displayDir}">${sign}${fmt(displayPct)}%</div>
+        <div class="tile-price ${displayDir}">${sym}${fmt(displayPrice)}&ensp;<span style="font-size:10px;opacity:0.55">${sign}${fmt(displayChg)}</span></div>
+      </div>
+      <div style="width:100%">
+        <div class="tile-meta">
+          <div class="tile-meta-item">O: <strong>${sym}${fmt(idx.open)}</strong></div>
+          <div class="tile-meta-item">H: <strong>${sym}${fmt(idx.day_high)}</strong></div>
+          <div class="tile-meta-item">L: <strong>${sym}${fmt(idx.day_low)}</strong></div>
+        </div>
+        <div class="tile-sparkline-wrap">${renderSparkline(idx.sparkline || [], displayDir, idx.prev_close ?? null, document.getElementById("tile-" + idx.id + "-lbl"))}</div>
+        ${countdownHTML}
+      </div>
+    </div>`;
+}
+
+async function fetchMarkets() {
+  try {
+    const r = await fetch(API_BASE + '/api/markets');
+    const d = await r.json();
+
+    const row1 = document.getElementById('market-bar-row1');
+    const row2 = document.getElementById('market-bar-row2');
+    row1.querySelectorAll('.market-tile').forEach(el => el.remove());
+    row2.querySelectorAll('.market-tile').forEach(el => el.remove());
+
+    (d.indices || []).forEach(idx => {
+      const div = document.createElement('div');
+      div.innerHTML = renderTile(idx);
+      const tile = div.firstElementChild;
+      if ((idx.row || 1) === 2) {
+        row2.appendChild(tile);
+      } else {
+        row1.appendChild(tile);
+      }
+    });
+
+    if (d.last_updated) {
+      document.getElementById('market-updated-time').textContent = relTime(d.last_updated);
+    }
+  } catch(e) { console.warn('[Markets] error:', e); }
+}
+
+// ── Search Feed info tooltip ──────────────────────────
+function sfToggleTooltip(e) {
+  e.stopPropagation();
+  const tip = document.getElementById('sf-tooltip');
+  tip.classList.toggle('visible');
+}
+// Close tooltip when clicking outside
+document.addEventListener('click', function() {
+  const tip = document.getElementById('sf-tooltip');
+  if (tip) tip.classList.remove('visible');
+});
+
+// ── Feed render ───────────────────────────────────────
+function renderPost(p) {
+  const brk      = isBreaking(p.text);
+  const priority = p.is_news_account;
+  const isDupe   = checkAndRegisterDupe(p.text, p.created_at);
+  const initials = (p.author_display || p.author_handle || '?')[0].toUpperCase();
+  const avatar   = p.author_avatar
+    ? `<img src="${esc(p.author_avatar)}" alt="" onerror="this.style.display='none'">`
+    : initials;
+
+  let badgeClass = '', badgeText = '';
+  if (priority && brk)    { badgeClass = 'priority'; badgeText = '★ Breaking'; }
+  else if (brk)           { badgeClass = 'breaking'; badgeText = 'Breaking'; }
+  // No badge if plain news-account post or untagged search result — feed name suppressed
+
+  const mainBadge = badgeText
+    ? `<div class="feed-badge ${badgeClass}">${badgeText}</div>`
+    : '';
+
+  const dupeBadge = isDupe
+    ? `<div class="feed-badge repeat" title="Similar post seen in last 4 hours">↻ repeat</div>`
+    : '';
+
+  return `<div class="feed-item">
+    <div class="feed-top">
+      <div class="feed-avatar">${avatar}</div>
+      <div class="feed-author">
+        <div class="feed-name">${esc(p.author_display || p.author_handle)}</div>
+        <div class="feed-handle">@${esc(p.author_handle)}</div>
+      </div>
+      <div class="feed-time">${relTime(p.created_at)}</div>
+      ${mainBadge}
+      ${dupeBadge}
+    </div>
+    <div class="feed-text">${esc((p.text || '').slice(0, 260))}</div>
+    <div class="feed-stats">
+      <div class="feed-stat">♥ ${p.like_count || 0}</div>
+      <div class="feed-stat">↺ ${p.repost_count || 0}</div>
+      <div class="feed-stat">💬 ${p.reply_count || 0}</div>
+      <a href="${esc(p.url)}" target="_blank" class="feed-link">↗ bsky</a>
+    </div>
+  </div>`;
+}
+
+// ── Event render ──────────────────────────────────────
+function renderEventPosts(posts) {
+  if (!posts || !posts.length) return '';
+  return posts.map(p => {
+    const newsClass = p.is_news ? ' news-src' : '';
+    const linkHTML  = p.url
+      ? `<a class="event-post-link" href="${esc(p.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗</a>`
+      : '';
+    return `<div class="event-post-row">
+      <span class="event-post-handle${newsClass}">@${esc(p.handle)}</span>
+      <span class="event-post-text">${esc(p.text)}</span>
+      ${linkHTML}
+    </div>`;
+  }).join('');
+}
+
+function toggleEventExpand(el) {
+  el.classList.toggle('expanded');
+  const btn = el.querySelector('.event-expand-btn');
+  if (btn) btn.textContent = el.classList.contains('expanded') ? '▲ collapse' : '▼ expand';
+}
+
+function renderEvent(e) {
+  const samples   = (e.sample_posts || []).slice(0, 2)
+    .map(t => `<div class="event-sample">${esc(t)}</div>`).join('');
+  const sources   = (e.sources || []).slice(0, 3).map(s => '@' + s).join(', ');
+  const hasPosts  = e.posts && e.posts.length > 0;
+  const postsHTML = hasPosts ? renderEventPosts(e.posts) : '';
+  // Duplicate check uses the event title as fingerprint
+  const isDupe    = checkAndRegisterDupe(e.title, e.detected_at);
+  const dupeTag   = isDupe
+    ? `<div class="event-tag" style="color:#4455aa;border-color:#2a2a60" title="Similar event detected in last 4 hours">↻ repeat</div>`
+    : '';
+  const expandBtn = hasPosts
+    ? `<button class="event-expand-btn" onclick="event.stopPropagation(); toggleEventExpand(this.closest('.event-item'))">▼ expand</button>`
+    : '';
+  return `<div class="event-item" data-severity="${e.severity}" data-keyword="${e.keyword||''}" data-strategy="${e.strategy||''}" onclick="toggleEventExpand(this)">
+    <div class="event-sev-line sev-${e.severity}"></div>
+    <div class="event-top">
+      <div class="event-title">${esc(e.title)}</div>
+      <div class="event-sev sev-badge-${e.severity}">${e.severity}</div>
+      ${e.status === 'breaking'   ? '<span class="evt-status-badge evt-status-breaking">🔴 NEW</span>'    : ''}
+      ${e.status === 'developing' ? '<span class="evt-status-badge evt-status-developing">🟡 Developing</span>' : ''}
+      ${e.status === 'stale'      ? '<span class="evt-status-badge evt-status-stale">⬜ Stale</span>'           : ''}
+      ${e.status === 'active'     ? '<span class="evt-status-badge evt-status-active">● Active</span>'         : ''}
+    </div>
+    <div class="event-samples">${samples}</div>
+    <div class="event-meta">
+      <div class="event-tag"><strong>${e.post_count}</strong> posts</div>
+      ${sources ? `<div class="event-tag">${esc(sources)}</div>` : ''}
+      ${dupeTag}
+      <div class="event-tag" style="margin-left:auto">${relTime(e.detected_at)}</div>
+      ${expandBtn}
+    </div>
+    ${hasPosts ? `<div class="event-posts">${postsHTML}</div>` : ''}
+  </div>`;
+}
+
+// ── Fetch posts ───────────────────────────────────────
+async function fetchPosts() {
+  const r = await fetch(API_BASE + '/api/posts');
+  const d = await r.json();
+
+  const loading = document.getElementById('feed-loading');
+  if (loading) loading.remove();
+
+  const posts = d.posts || [];
+  const novel = posts.filter(p => !seenPostUris.has(p.uri));
+  novel.forEach(p => seenPostUris.add(p.uri));
+
+  const newPriority = novel.filter(p => p.is_news_account);
+  const newSearch   = novel.filter(p => !p.is_news_account);
+
+  // Priority half
+  if (newPriority.length) {
+    const pbody  = document.getElementById('news-body');
+    const pempty = document.getElementById('news-empty');
+    if (pempty) pempty.remove();
+    pbody.insertAdjacentHTML('afterbegin', newPriority.map(renderPost).join(''));
+    pbody.querySelectorAll('.feed-item').forEach((el, i) => { if (i >= 40) el.remove(); });
+  }
+
+  // Search half
+  if (newSearch.length) {
+    const sbody = document.getElementById('search-body');
+    sbody.insertAdjacentHTML('afterbegin', newSearch.map(renderPost).join(''));
+    sbody.querySelectorAll('.feed-item').forEach((el, i) => { if (i >= 40) el.remove(); });
+  }
+
+  const totalPriority = posts.filter(p => p.is_news_account).length;
+  const totalSearch   = posts.filter(p => !p.is_news_account).length;
+  document.getElementById('news-count').textContent = totalPriority + ' posts';
+  document.getElementById('search-count').textContent   = totalSearch   + ' posts';
+  document.getElementById('feed-count').textContent     = posts.length  + ' posts';
+  document.getElementById('feed-status').textContent    = d.status || 'live';
+  if (d.last_updated) document.getElementById('feed-updated').textContent = relTime(d.last_updated);
+}
+
+// ── Fetch events ──────────────────────────────────────
+async function fetchEvents() {
+  const r = await fetch(API_BASE + '/api/events');
+  const d = await r.json();
+  const events = d.events || [];
+  const body   = document.getElementById('events-body');
+  const empty  = document.getElementById('events-empty');
+
+  const novel = events.filter(e => !seenEventIds.has(e.id));
+  novel.forEach(e => seenEventIds.add(e.id));
+
+  if (novel.length) {
+    if (empty) empty.style.display = 'none';
+    body.insertAdjacentHTML('afterbegin', novel.map(renderEvent).join(''));
+    ingestSpikeEvents(novel);
+    applyKeywordFilter();
+  }
+
+  updateEventsCount();
+  document.getElementById('evt-critical').textContent = events.filter(e => e.severity === 'CRITICAL').length;
+  document.getElementById('evt-high').textContent     = events.filter(e => e.severity === 'HIGH').length;
+  document.getElementById('evt-medium').textContent   = events.filter(e => e.severity === 'MEDIUM').length;
+}
+
+// ── Fetch status ──────────────────────────────────────
+async function fetchStatus() {
+  const r = await fetch(API_BASE + '/api/status');
+  const d = await r.json();
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setEl('stat-posts',   d.posts_cached    || 0);
+  setEl('stat-events',  d.events_detected || 0);
+  setEl('stat-feeds',   d.feeds_active    || 0);
+  setEl('feed-sources', d.feeds_active    || 0);
+}
+
+// ── Orchestrate ───────────────────────────────────────
+async function fetchAll() {
+  try {
+    await Promise.all([fetchPosts(), fetchEvents(), fetchStatus()]);
+  } catch(err) {
+    console.warn('[Dashboard] fetch error:', err);
+    document.getElementById('feed-status').textContent = 'error — retrying';
+  }
+}
+
+function clearEvents() {
+  seenEventIds.clear();
+  document.getElementById('events-body').innerHTML =
+    `<div class="state-empty" id="events-empty">Monitoring for events…</div>`;
+  document.getElementById('events-count').textContent = '0 events';
+  ['evt-critical','evt-high','evt-medium'].forEach(id =>
+    document.getElementById(id).textContent = '0');
+}
+
+// ── Keyword spike chip bar ────────────────────────────────────────────────────
+
+function renderSpikeBar() {
+  const bar   = document.getElementById('spike-bar');
+  const empty = document.getElementById('spike-bar-empty');
+  const now   = Date.now();
+  for (const [kw, isoStr] of spikeDetectedAt.entries()) {
+    if (now - new Date(isoStr).getTime() > SPIKE_WINDOW_MS) {
+      spikeDetectedAt.delete(kw);
+      spikeKeywords.delete(kw);
+    }
+  }
+  bar.querySelectorAll('.spike-chip').forEach(el => el.remove());
+  if (spikeKeywords.size === 0) {
+    if (empty) empty.style.display = '';
+    updateEventsCount();
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  const kwCounts = {};
+  document.querySelectorAll('#events-body .event-item[data-keyword]').forEach(el => {
+    const kw = el.dataset.keyword;
+    if (kw) kwCounts[kw] = (kwCounts[kw] || 0) + 1;
+  });
+  for (const [kw, active] of spikeKeywords.entries()) {
+    const count = kwCounts[kw] || 0;
+    const chip  = document.createElement('span');
+    chip.className  = 'spike-chip' + (active ? ' active' : '');
+    chip.dataset.kw = kw;
+    chip.title      = (active ? 'Hide' : 'Show') + ' "' + kw + '" events';
+    chip.innerHTML  = '<span class="chip-dot"></span>' + esc(kw) + '<span class="chip-count">' + count + '</span>';
+    chip.onclick    = () => toggleSpikeKeyword(kw);
+    bar.appendChild(chip);
+  }
+  updateEventsCount();
+}
+
+function toggleSpikeKeyword(kw) {
+  spikeKeywords.set(kw, !spikeKeywords.get(kw));
+  applyKeywordFilter();
+  renderSpikeBar();
+}
+
+let showMedium = false;  // MEDIUM events hidden by default
+
+function toggleMedium() {
+  showMedium = !showMedium;
+  const badge = document.getElementById('evt-medium');
+  if (badge) badge.style.opacity = showMedium ? '1' : '0.4';
+  applyKeywordFilter();
+}
+
+function applyKeywordFilter() {
+  document.querySelectorAll('#events-body .event-item').forEach(el => {
+    const sev = el.dataset.severity || '';
+    const isSpike = el.dataset.strategy === 'velocity_spike' && el.dataset.keyword;
+
+    if (sev === 'MEDIUM' && !showMedium) {
+      // Always hide MEDIUM events (including spikes) when showMedium is off
+      el.style.display = 'none';
+    } else if (isSpike) {
+      el.style.display = spikeKeywords.get(el.dataset.keyword) ? '' : 'none';
+    } else {
+      el.style.display = '';
+    }
+  });
+  updateEventsCount();
+}
+
+function updateEventsCount() {
+  const n = document.querySelectorAll('#events-body .event-item:not([style*="none"])').length;
+  document.getElementById('events-count').textContent = n + ' event' + (n !== 1 ? 's' : '');
+}
+
+function ingestSpikeEvents(events) {
+  let changed = false;
+  events.forEach(e => {
+    if (e.strategy === 'velocity_spike' && e.keyword) {
+      if (!spikeKeywords.has(e.keyword)) {
+        spikeKeywords.set(e.keyword, true);
+        changed = true;
+      }
+      spikeDetectedAt.set(e.keyword, e.detected_at || new Date().toISOString());
+    }
+  });
+  if (changed) renderSpikeBar();
+}
+
+// ── Init ──────────────────────────────────────────────
+fetchAll();
+fetchMarkets();
+setInterval(fetchMarkets, 60000);
+setInterval(renderSpikeBar, 30000);
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// KALSHI PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+
+const KALSHI_API    = API_BASE + '/api/kalshi';
+const K_PER_PAGE    = 15;
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let kActiveTab        = 'filter';
+// Browse state
+let kAllSeries        = [];          // [{ticker, title, category, frequency}]
+let kActiveCategory   = '';
+let kActiveSeries     = null;        // series ticker string
+// Market paging state
+let kCurrentPage      = 1;
+let kTotalPages       = 1;
+let kTotalMarkets     = 0;
+// Match state
+let kCurrentPageM     = 1;
+let kTotalPagesM      = 1;
+// Shared filter state
+let kConfThreshold    = 0.15;
+let kPriceMin         = 1;
+let kPriceMax         = 99;
+let kDaysMin          = null;
+let kDaysMax          = null;
+let kDaysSliderMax    = 365;
+let kFetching         = false;
+let kFetchingAt       = 0;       // timestamp when kFetching was set true
+// Watchdog: if kFetching stays true for >30s, release the lock
+// (generous threshold - normal requests complete in <2s with threaded Flask)
+setInterval(() => {
+  if (kFetching && kFetchingAt && (Date.now() - kFetchingAt) > 30000) {
+    console.warn('[Kalshi] kFetching watchdog: releasing stuck lock after 30s');
+    kFetching = false;
+    kFetchingAt = 0;
+  }
+}, 5000);
+let kPriceDebounce    = null;
+let kDaysDebounce     = null;
+let kConfDebounce     = null;
+let kSortMode         = 'default';  // 'default' | 'price-asc' | 'price-desc' | 'close-asc' | 'close-desc'
+let kSearchQuery      = '';         // live text in search bar
+let kSearchDebounce   = null;
+// Match 3-col state
+let kMatchAllMarkets  = [];         // full array from last /match response
+let kMatchSortMode    = 'conf';     // 'conf' | 'prob-desc' | 'prob-asc'
+let kMatchCategory    = '';
+let kMatchSeries      = null;
+let kMatchSeriesMap   = {};         // ticker → series info
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function kSwitchTab(tab) {
+  kActiveTab = tab;
+  document.getElementById('ktab-filter').classList.toggle('active', tab === 'filter');
+  document.getElementById('ktab-match').classList.toggle('active',  tab === 'match');
+  document.getElementById('k-browse-panel').style.display    = tab === 'filter' ? '' : 'none';
+  document.getElementById('k-browse-search-bar').style.display = tab === 'filter' ? '' : 'none';
+  document.getElementById('k-match-controls').style.display  = tab === 'match'  ? '' : 'none';
+  document.getElementById('k-match-body').style.display      = tab === 'match'  ? '' : 'none';
+  if (tab === 'match') kFetchMatch();
+}
+
+// ── Price range slider ─────────────────────────────────────────────────────────
+function kUpdatePriceRange() {
+  const minEl = document.getElementById('k-price-min');
+  const maxEl = document.getElementById('k-price-max');
+  if (!minEl || !maxEl) return;
+  let mn = parseInt(minEl.value), mx = parseInt(maxEl.value);
+  kPriceMin = Math.min(mn, mx);
+  kPriceMax = Math.max(mn, mx);
+  const pct_mn = (kPriceMin - 1) / 98 * 100;
+  const pct_mx = (kPriceMax - 1) / 98 * 100;
+  const fill = document.getElementById('k-price-fill');
+  if (fill) { fill.style.left = pct_mn + '%'; fill.style.width = (pct_mx - pct_mn) + '%'; }
+  const fmt = v => '$' + (v / 100).toFixed(2);
+  const isDefault = kPriceMin === 1 && kPriceMax === 99;
+  const lbl = document.getElementById('k-price-label');
+  if (lbl) lbl.textContent = isDefault ? 'Any' : `${fmt(kPriceMin)}–${fmt(kPriceMax)}`;
+  minEl.style.zIndex = mn <= mx ? 2 : 3;
+  maxEl.style.zIndex = mn <= mx ? 3 : 2;
+  clearTimeout(kPriceDebounce);
+  kPriceDebounce = setTimeout(() => { kCurrentPage = 1; kFetchMarkets(); }, 400);
+}
+
+// ── Days range slider ──────────────────────────────────────────────────────────
+function kUpdateDaysRange() {
+  const minEl = document.getElementById('k-days-min');
+  const maxEl = document.getElementById('k-days-max');
+  if (!minEl || !maxEl) return;
+  let mn = parseInt(minEl.value), mx = parseInt(maxEl.value);
+  const lo = Math.min(mn, mx), hi = Math.max(mn, mx);
+  const fill = document.getElementById('k-days-fill');
+  if (fill) { fill.style.left = lo + '%'; fill.style.width = (hi - lo) + '%'; }
+  const realMn = Math.round(lo / 100 * kDaysSliderMax);
+  const realMx = Math.round(hi / 100 * kDaysSliderMax);
+  kDaysMin = realMn === 0 ? null : realMn;
+  kDaysMax = realMx >= kDaysSliderMax ? null : realMx;
+  const label = (kDaysMin === null && kDaysMax === null)
+    ? 'Any' : `${kDaysMin ?? 0}d–${kDaysMax !== null ? kDaysMax + 'd' : '∞'}`;
+  const lbl = document.getElementById('k-days-label');
+  if (lbl) lbl.textContent = label;
+  minEl.style.zIndex = mn <= mx ? 2 : 3;
+  maxEl.style.zIndex = mn <= mx ? 3 : 2;
+  clearTimeout(kDaysDebounce);
+  kDaysDebounce = setTimeout(() => { kCurrentPage = 1; kFetchMarkets(); }, 400);
+}
+
+// ── Confidence slider ──────────────────────────────────────────────────────────
+function kUpdateConfidence() {
+  const slider = document.getElementById('k-conf-slider');
+  if (!slider) return;
+  const raw = parseInt(slider.value);
+  kConfThreshold = raw / 100;
+  const pct  = (raw - 5) / 55 * 100;
+  const fill = document.getElementById('k-conf-fill');
+  if (fill) fill.style.width = pct + '%';
+  const val = document.getElementById('k-conf-value');
+  if (val) val.textContent = kConfThreshold.toFixed(2);
+  clearTimeout(kConfDebounce);
+  kConfDebounce = setTimeout(() => { kCurrentPageM = 1; kFetchMatch(); }, 300);
+}
+
+// ── Load series from API and build category + series columns ──────────────────
+async function kLoadSeries(attempt) {
+  attempt = attempt || 1;
+  const catList = document.getElementById('k-cat-list');
+  try {
+    const _sc = new AbortController();
+    const _st = setTimeout(() => _sc.abort(), 90000);  // 90s timeout
+    const r = await fetch(KALSHI_API + '/series', { signal: _sc.signal });
+    clearTimeout(_st);
+    // 202 = still building cache, retry
+    if (r.status === 202) {
+      if (catList) catList.innerHTML = '<div style="padding:12px;font-size:10px;color:#666">Building index… (' + attempt + ')</div>';
+      if (attempt < 10) setTimeout(() => kLoadSeries(attempt + 1), 4000);
+      return;
+    }
+    const d = await r.json();
+    // active_tickers: set of series tickers that have at least one open market
+    const active = new Set(d.active_tickers || []);
+    kAllSeries = (d.series || []).filter(s => active.size === 0 || active.has(s.ticker));
+    kBuildCategoryColumn();
+  } catch(e) {
+    console.warn('[Kalshi] Series load failed:', e);
+    // Retry on timeout/abort (server still building), give up after 10 attempts
+    if (attempt < 10) {
+      if (catList) catList.innerHTML = '<div style="padding:12px;font-size:10px;color:#666">Loading… (' + attempt + ')</div>';
+      setTimeout(() => kLoadSeries(attempt + 1), 5000);
+    } else {
+      if (catList) catList.innerHTML = '<div style="padding:12px;font-size:10px;color:#553333">Load failed — try refreshing</div>';
+    }
+  }
+}
+
+function kBuildCategoryColumn() {
+  // Count series per category, filtered by search if active
+  const q = kSearchQuery.toLowerCase().trim();
+  const filtered = q
+    ? kAllSeries.filter(s => {
+        const title = (s.title || s.ticker || '').toLowerCase();
+        const cat   = (s.category || '').toLowerCase();
+        return title.includes(q) || cat.includes(q);
+      })
+    : kAllSeries;
+
+  const counts = {};
+  for (const s of filtered) {
+    const cat = s.category || 'Other';
+    counts[cat] = (counts[cat] || 0) + 1;
+  }
+  const cats = Object.keys(counts).sort();
+  const list = document.getElementById('k-cat-list');
+  list.innerHTML = '';
+
+  // "All" row always first
+  const allEl = document.createElement('div');
+  allEl.className = 'k-cat-row' + (kActiveCategory === '__ALL__' ? ' active' : '');
+  allEl.dataset.cat = '__ALL__';
+  const totalSeries = filtered.length;
+  allEl.innerHTML = `<span>All</span><span class="k-cat-count">${totalSeries}</span>`;
+  allEl.onclick = () => kSelectCategory('__ALL__', allEl);
+  list.appendChild(allEl);
+
+  for (const cat of cats) {
+    const el = document.createElement('div');
+    el.className = 'k-cat-row' + (kActiveCategory === cat ? ' active' : '');
+    el.dataset.cat = cat;
+    el.innerHTML = `<span>${cat}</span><span class="k-cat-count">${counts[cat]}</span>`;
+    el.onclick = () => kSelectCategory(cat, el);
+    list.appendChild(el);
+  }
+
+  // Restore previously active series selection after category column rebuild.
+  // kSelectCategory nulls kActiveSeries — we re-select it here after the fact.
+  if (kActiveSeries) {
+    const _restoredTicker = kActiveSeries;
+    // Re-run kSelectCategory to repopulate the series column for the active cat
+    const catEl = document.querySelector(`.k-cat-row[data-cat="${kActiveCategory}"]`);
+    if (catEl) {
+      kSelectCategory(kActiveCategory, catEl);
+      // Now re-select the series row (kSelectCategory just cleared it)
+      const serEl = document.querySelector(`.k-series-row[data-ticker="${_restoredTicker}"]`);
+      if (serEl) {
+        kActiveSeries = _restoredTicker;
+        serEl.classList.add('active');
+        kFetchMarkets();
+      }
+    }
+  }
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+function kOnSearch() {
+  const inp = document.getElementById('k-search-input');
+  const clr = document.getElementById('k-search-clear');
+  kSearchQuery = inp ? inp.value : '';
+  if (clr) clr.style.display = kSearchQuery ? '' : 'none';
+  clearTimeout(kSearchDebounce);
+  kSearchDebounce = setTimeout(() => {
+    // If "All" was selected and search text changes, re-populate series
+    kBuildCategoryColumn();
+    if (kActiveCategory === '__ALL__') {
+      kSelectCategory('__ALL__', document.querySelector('.k-cat-row[data-cat="__ALL__"]'));
+    } else if (kActiveCategory) {
+      // Re-filter series for current category
+      const el = document.querySelector(`.k-cat-row[data-cat="${kActiveCategory}"]`);
+      if (el) kSelectCategory(kActiveCategory, el);
+    }
+  }, 200);
+}
+
+function kClearSearch() {
+  const inp = document.getElementById('k-search-input');
+  if (inp) inp.value = '';
+  kSearchQuery = '';
+  const clr = document.getElementById('k-search-clear');
+  if (clr) clr.style.display = 'none';
+  kBuildCategoryColumn();
+}
+
+// ── Sort ──────────────────────────────────────────────────────────────────────
+function kSetSort(mode) {
+  kSortMode = mode;
+  document.querySelectorAll('.k-sort-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('ksort-' + mode);
+  if (btn) btn.classList.add('active');
+  kCurrentPage = 1;
+  kFetchMarkets();
+}
+
+function kSetMatchSort(mode) {
+  kMatchSortMode = mode;
+  document.querySelectorAll('#km-sort-strip .k-sort-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('kmsort-' + mode);
+  if (btn) btn.classList.add('active');
+  kCurrentPageM = 1;
+  // Re-render with current markets using new sort
+  const body = document.getElementById('km-market-body');
+  if (body && body._matchMarkets) kRenderMatchMarkets(body._matchMarkets);
+}
+
+function kSelectCategory(cat, el) {
+  kActiveCategory = cat;
+  kActiveSeries   = null;
+  document.querySelectorAll('.k-cat-row').forEach(r => r.classList.remove('active'));
+  if (el) el.classList.add('active');
+
+  // Update series column header
+  const hdr = document.getElementById('k-series-header');
+  if (hdr) hdr.textContent = cat === '__ALL__' ? 'All Series' : cat;
+
+  // Filter by category and search query
+  const q = kSearchQuery.toLowerCase().trim();
+  let seriesList;
+  if (cat === '__ALL__') {
+    seriesList = q
+      ? kAllSeries.filter(s => (s.title||s.ticker||'').toLowerCase().includes(q) || (s.category||'').toLowerCase().includes(q))
+      : kAllSeries;
+  } else {
+    seriesList = kAllSeries.filter(s => (s.category || 'Other') === cat);
+    if (q) seriesList = seriesList.filter(s => (s.title||s.ticker||'').toLowerCase().includes(q));
+  }
+
+  const col = document.getElementById('k-series-list');
+  col.innerHTML = '';
+  for (const s of seriesList) {
+    const row = document.createElement('div');
+    row.className = 'k-series-row';
+    row.dataset.ticker = s.ticker;
+    const freq = s.frequency ? `<span class="k-meta-tag">${s.frequency}</span>` : '';
+    row.innerHTML = `
+      <div class="k-series-title">${s.title || s.ticker}</div>
+      <div class="k-series-meta">${s.ticker} ${freq}</div>`;
+    row.onclick = () => kSelectSeries(s.ticker, row);
+    col.appendChild(row);
+  }
+
+  // Clear markets column
+  const body = document.getElementById('k-market-body');
+  body.innerHTML = '<div class="state-empty" id="k-empty" style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
+  const pi = document.getElementById('k-page-info');
+  if (pi) pi.textContent = '';
+  document.getElementById('k-prev-btn').disabled = true;
+  document.getElementById('k-next-btn').disabled = true;
+}
+
+function kSelectSeries(ticker, el) {
+  kActiveSeries = ticker;
+  kCurrentPage  = 1;
+  kFetching     = false;   // explicit user click always wins — release any stuck lock
+  kFetchingAt   = 0;
+  document.querySelectorAll('.k-series-row').forEach(r => r.classList.remove('active'));
+  el.classList.add('active');
+  kFetchMarkets();
+}
+
+// ── Fetch markets for selected series ─────────────────────────────────────────
+async function kFetchMarkets() {
+  if (!kActiveSeries) return;
+  if (kFetching) return;
+  kFetching = true;
+  kFetchingAt = Date.now();
+
+  const body = document.getElementById('k-market-body');
+  if (body) body.innerHTML = '<div style="padding:12px;font-size:10px;color:#333">Loading…</div>';
+
+  const params = new URLSearchParams({
+    series_ticker: kActiveSeries,
+    page:          kCurrentPage,
+    per_page:      K_PER_PAGE,
+    min_price:     kPriceMin,
+    max_price:     kPriceMax,
+  });
+  if (kDaysMin !== null) params.set('min_days', kDaysMin);
+  if (kDaysMax !== null) params.set('max_days', kDaysMax);
+  if (kSortMode !== 'default') params.set('sort', kSortMode);
+
+  try {
+    const _ctrl = new AbortController();
+    const _timer = setTimeout(() => _ctrl.abort(), 25000);
+    const resp = await fetch(`${KALSHI_API}/markets?${params}`, { signal: _ctrl.signal });
+    clearTimeout(_timer);
+    const data = await resp.json();
+
+    kTotalPages   = data.total_pages || 1;
+    kTotalMarkets = data.total       || 0;
+    kCurrentPage  = data.page        || 1;
+
+    const b = document.getElementById('k-market-body');
+    const countEl = document.getElementById('kalshi-count');
+    if (b) {
+      b.innerHTML = '';
+      if (kTotalMarkets === 0) {
+        b.innerHTML = '<div class="state-empty" id="k-empty" style="padding:14px;font-size:10px;color:#333">No markets match.</div>';
+        if (countEl) countEl.textContent = '—';
+      } else {
+        (data.markets || []).forEach(m => {
+          try { b.insertAdjacentHTML('beforeend', kRenderMarket(m, false)); }
+          catch(re) { console.warn('[Kalshi] render error', re); }
+        });
+        if (countEl) countEl.textContent = kTotalMarkets + ' mkts';
+      }
+    }
+
+    const prevBtn  = document.getElementById('k-prev-btn');
+    const nextBtn  = document.getElementById('k-next-btn');
+    const pageInfo = document.getElementById('k-page-info');
+    if (pageInfo) pageInfo.textContent = `${kCurrentPage}/${kTotalPages}`;
+    if (prevBtn)  prevBtn.disabled  = kCurrentPage <= 1;
+    if (nextBtn)  nextBtn.disabled  = kCurrentPage >= kTotalPages;
+
+    if (data.status) kSetStatus(data.status.status, data.status);
+  } catch(e) {
+    const b = document.getElementById('k-market-body');
+    if (b) b.innerHTML = `<div style="padding:12px;font-size:10px;color:#553333">Fetch failed: ${e.message}</div>`;
+    console.warn('[Kalshi] kFetchMarkets error:', e);
+  } finally {
+    kFetching = false;  // ALWAYS release the lock
+  }
+}
+
+function kChangePage(delta) {
+  kCurrentPage = Math.max(1, Math.min(kTotalPages, kCurrentPage + delta));
+  kFetchMarkets();
+}
+
+// ── Semantic Match — 3-column view ────────────────────────────────────────────
+async function kFetchMatch() {
+  // Server scores in background and returns cached results instantly — no timeout needed
+  const params = new URLSearchParams({ threshold: kConfThreshold, page: 1, per_page: 500 });
+
+  let data;
+  try {
+    const resp = await fetch(`${KALSHI_API}/match?${params}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    data = await resp.json();
+  } catch(e) {
+    // Network error — silently retry; don't overwrite results if we already have them
+    if (!kMatchAllMarkets || !kMatchAllMarkets.length) {
+      const catList = document.getElementById('km-cat-list');
+      if (catList) catList.innerHTML =
+        `<div style="padding:12px;font-size:10px;color:#555">Connecting…</div>`;
+    }
+    return;
+  }
+
+  kMatchAllMarkets = data.markets || [];
+
+  if (data.status) kSetStatus(data.status.status, data.status);
+
+  // Update corpus label (server now always returns this)
+  const corpus = document.getElementById('k-match-corpus');
+  if (corpus && data.corpus) corpus.textContent = data.corpus;
+
+  // Build series lookup from kAllSeries
+  kMatchSeriesMap = {};
+  for (const s of kAllSeries) kMatchSeriesMap[s.ticker] = s;
+
+  // Build category column from matched markets
+  kBuildMatchCategoryColumn();
+}
+
+function kBuildMatchCategoryColumn() {
+  // Derive category from series_ticker → kAllSeries lookup
+  const counts = {};
+  for (const m of kMatchAllMarkets) {
+    const sTicker = m.series_ticker || '';
+    const s = kMatchSeriesMap[sTicker];
+    const cat = (s && s.category) || m.category || 'Other';
+    counts[cat] = (counts[cat] || 0) + 1;
+  }
+  const cats = Object.keys(counts).sort();
+  const list = document.getElementById('km-cat-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (kMatchAllMarkets.length === 0) {
+    list.innerHTML = '';
+    document.getElementById('km-series-list').innerHTML = '';
+    document.getElementById('km-market-body').innerHTML = `
+      <div style="padding:16px 18px;font-size:10px;line-height:1.7;color:#555;max-width:340px">
+        <div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px">No semantic matches found</div>
+        <div style="margin-bottom:10px">The matcher compares the text of active detected events and recent Bluesky posts against every open Kalshi market title and subtitle using token overlap and character bigram similarity.</div>
+        <div style="margin-bottom:6px;color:#444">Common reasons for no matches:</div>
+        <ul style="padding-left:14px;color:#444;margin-bottom:10px">
+          <li style="margin-bottom:4px">No events have been detected yet — the feed needs time to accumulate posts and identify spikes</li>
+          <li style="margin-bottom:4px">Current events don't share enough vocabulary with any open Kalshi market titles</li>
+          <li style="margin-bottom:4px">The confidence threshold is set too high — try lowering it</li>
+          <li style="margin-bottom:4px">Kalshi market data may not have loaded yet — click ↻ Refresh</li>
+        </ul>
+        <div style="color:#3a3a3a;font-style:italic">The matcher is purely lexical: no embeddings or AI. It works best when events contain proper nouns (e.g. "Fed", "CPI", "Bitcoin") that also appear in Kalshi market titles.</div>
+      </div>`;
+    return;
+  }
+
+  // "All" row
+  const allEl = document.createElement('div');
+  allEl.className = 'k-cat-row' + (kMatchCategory === '__ALL__' ? ' active' : '');
+  allEl.dataset.cat = '__ALL__';
+  allEl.innerHTML = `<span>All</span><span class="k-cat-count">${kMatchAllMarkets.length}</span>`;
+  allEl.onclick = () => kSelectMatchCategory('__ALL__', allEl);
+  list.appendChild(allEl);
+
+  for (const cat of cats) {
+    const el = document.createElement('div');
+    el.className = 'k-cat-row' + (kMatchCategory === cat ? ' active' : '');
+    el.dataset.cat = cat;
+    el.innerHTML = `<span>${cat}</span><span class="k-cat-count">${counts[cat]}</span>`;
+    el.onclick = () => kSelectMatchCategory(cat, el);
+    list.appendChild(el);
+  }
+
+  // Auto-select "All" if nothing selected, else reselect current
+  if (!kMatchCategory) {
+    kSelectMatchCategory('__ALL__', allEl);
+  } else {
+    const existing = list.querySelector(`[data-cat="${kMatchCategory}"]`);
+    if (existing) kSelectMatchCategory(kMatchCategory, existing);
+    else kSelectMatchCategory('__ALL__', allEl);
+  }
+}
+
+function kSelectMatchCategory(cat, el) {
+  kMatchCategory = cat;
+  kMatchSeries   = null;
+  kCurrentPageM  = 1;
+  document.querySelectorAll('#km-cat-list .k-cat-row').forEach(r => r.classList.remove('active'));
+  if (el) el.classList.add('active');
+
+  const hdr = document.getElementById('km-series-header');
+  if (hdr) hdr.textContent = cat === '__ALL__' ? 'All Series' : cat;
+
+  // Filter markets by category
+  const catMarkets = cat === '__ALL__' ? kMatchAllMarkets : kMatchAllMarkets.filter(m => {
+    const s = kMatchSeriesMap[m.series_ticker || ''];
+    const mcat = (s && s.category) || m.category || 'Other';
+    return mcat === cat;
+  });
+
+  // Build series column from these markets
+  const seriesSeen = new Map();
+  for (const m of catMarkets) {
+    const st = m.series_ticker || '';
+    if (!seriesSeen.has(st)) {
+      const s = kMatchSeriesMap[st];
+      seriesSeen.set(st, { ticker: st, title: (s && s.title) || st, count: 0 });
+    }
+    seriesSeen.get(st).count++;
+  }
+  const seriesList = [...seriesSeen.values()].sort((a,b) => b.count - a.count);
+
+  const col = document.getElementById('km-series-list');
+  col.innerHTML = '';
+  for (const s of seriesList) {
+    const row = document.createElement('div');
+    row.className = 'k-series-row' + (kMatchSeries === s.ticker ? ' active' : '');
+    row.dataset.ticker = s.ticker;
+    row.innerHTML = `
+      <div class="k-series-title">${s.title}</div>
+      <div class="k-series-meta">${s.ticker} <span class="k-meta-tag">${s.count} match${s.count!==1?'es':''}</span></div>`;
+    row.onclick = () => kSelectMatchSeries(s.ticker, row, catMarkets);
+    col.appendChild(row);
+  }
+
+  // Auto-populate markets with all catMarkets if no series selected
+  kRenderMatchMarkets(catMarkets);
+}
+
+function kSelectMatchSeries(ticker, el, catMarketsOverride) {
+  kMatchSeries  = ticker;
+  kCurrentPageM = 1;
+  document.querySelectorAll('#km-series-list .k-series-row').forEach(r => r.classList.remove('active'));
+  if (el) el.classList.add('active');
+
+  // Get cat markets
+  const catMarkets = catMarketsOverride || (kMatchCategory === '__ALL__'
+    ? kMatchAllMarkets
+    : kMatchAllMarkets.filter(m => {
+        const s = kMatchSeriesMap[m.series_ticker || ''];
+        return ((s && s.category) || m.category || 'Other') === kMatchCategory;
+      }));
+
+  const filtered = ticker ? catMarkets.filter(m => m.series_ticker === ticker) : catMarkets;
+  kRenderMatchMarkets(filtered);
+}
+
+function kRenderMatchMarkets(markets) {
+  const body  = document.getElementById('km-market-body');
+  const empty = document.getElementById('k-match-empty');
+  const PER   = K_PER_PAGE;
+
+  // Apply sort
+  const sorted = [...markets];
+  if (kMatchSortMode === 'prob-desc') {
+    sorted.sort((a, b) => (b.yes_ask ?? b.last_price ?? 0) - (a.yes_ask ?? a.last_price ?? 0));
+  } else if (kMatchSortMode === 'prob-asc') {
+    sorted.sort((a, b) => (a.yes_ask ?? a.last_price ?? 0) - (b.yes_ask ?? b.last_price ?? 0));
+  }
+  // 'conf' keeps original order (already sorted by _score desc from backend)
+
+  const total = sorted.length;
+  const pages = Math.max(1, Math.ceil(total / PER));
+  kCurrentPageM = Math.min(kCurrentPageM, pages);
+  const slice = sorted.slice((kCurrentPageM-1)*PER, kCurrentPageM*PER);
+
+  body.innerHTML = '';
+  if (total === 0) {
+    body.innerHTML = '<div class="state-empty" id="k-match-empty">No matches in this selection.</div>';
+  } else {
+    slice.forEach(m => body.insertAdjacentHTML('beforeend', kRenderMarket(m, true)));
+  }
+
+  const prevBtn  = document.getElementById('k-prev-btn-m');
+  const nextBtn  = document.getElementById('k-next-btn-m');
+  const pageInfo = document.getElementById('k-page-info-m');
+  if (pageInfo) pageInfo.textContent = `${kCurrentPageM}/${pages}`;
+  if (prevBtn)  prevBtn.disabled  = kCurrentPageM <= 1;
+  if (nextBtn)  nextBtn.disabled  = kCurrentPageM >= pages;
+
+  // Store current set on body element for pagination
+  body._matchMarkets = markets;
+}
+
+function kChangePageMatch(delta) {
+  const body = document.getElementById('km-market-body');
+  const markets = (body && body._matchMarkets) || [];
+  const pages = Math.max(1, Math.ceil(markets.length / K_PER_PAGE));
+  kCurrentPageM = Math.max(1, Math.min(pages, kCurrentPageM + delta));
+  kRenderMatchMarkets(markets);
+}
+
+async function kExpandEventSiblings(linkEl, eventTicker, seriesTicker) {
+  if (!eventTicker) return;
+  const card = linkEl.closest('.k-market');
+  if (!card) return;
+
+  // If already expanded, collapse
+  const existing = card.nextElementSibling;
+  if (existing && existing.classList.contains('k-event-siblings')) {
+    existing.remove();
+    linkEl.textContent = 'show all in event ↓';
+    return;
+  }
+
+  linkEl.textContent = 'loading…';
+  try {
+    const params = new URLSearchParams({ event_ticker: eventTicker, per_page: 50, page: 1, min_price: 0, max_price: 100 });
+    const r = await fetch(`/api/kalshi/markets?${params}`);
+    const d = await r.json();
+    const siblings = (d.markets || []).filter(m => m.event_ticker === eventTicker);
+
+    if (siblings.length <= 1) {
+      linkEl.textContent = 'only 1 market in event';
+      return;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'k-event-siblings';
+    container.style.cssText = 'border-left:2px solid #1a3a6a;margin:2px 0 2px 12px;padding:0 0 0 8px;';
+
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:9px;color:#4a8fff;padding:6px 8px 4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase';
+    hdr.textContent = `${eventTicker} · ${siblings.length} markets`;
+    container.appendChild(hdr);
+
+    for (const m of siblings) {
+      container.insertAdjacentHTML('beforeend', kRenderMarket(m, false));
+    }
+    card.after(container);
+    linkEl.textContent = 'collapse ↑';
+  } catch(e) {
+    linkEl.textContent = 'error loading';
+  }
+}
+
+
+// ── Render a market card ───────────────────────────────────────────────────────
+function kRenderMarket(m, showScore) {
+  let yesCents;
+  if (m.yes_ask_dollars != null)         yesCents = Math.round(parseFloat(m.yes_ask_dollars) * 100);
+  else if (m.yes_ask != null)            yesCents = m.yes_ask;
+  else if (m.last_price_dollars != null) yesCents = Math.round(parseFloat(m.last_price_dollars) * 100);
+  else if (m.last_price != null)         yesCents = m.last_price;
+  else                                    yesCents = 0;
+
+  let noCents;
+  if (m.no_ask_dollars != null)  noCents = Math.round(parseFloat(m.no_ask_dollars) * 100);
+  else if (m.no_ask != null)     noCents = m.no_ask;
+  else                            noCents = Math.max(0, 100 - yesCents);
+
+  const daysLeft = m.days_left != null ? m.days_left : '?';
+  const vol      = m.volume    != null ? Number(m.volume).toLocaleString() : '—';
+
+  // Build deep event-level Kalshi URL:
+  // https://kalshi.com/markets/{series_slug}/{series-title-slug}/{event_ticker_lower}
+  // e.g. https://kalshi.com/markets/kxwrecss/world-recessions/wrecss-26
+  let seriesSlug = (m.series_ticker || '').toLowerCase();
+  if (!seriesSlug && m.ticker) {
+    seriesSlug = m.ticker.toLowerCase().replace(/-\d{2}[a-z]{3}\d{2}.*$/i, '');
+  }
+  // Look up series title from kAllSeries / kMatchSeriesMap for the slug
+  const seriesData = (typeof kMatchSeriesMap !== 'undefined' && kMatchSeriesMap[m.series_ticker || ''])
+    || (typeof kAllSeries !== 'undefined' && kAllSeries.find(s => s.ticker === m.series_ticker));
+  const seriesTitleSlug = seriesData && seriesData.title
+    ? seriesData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    : seriesSlug.replace(/^kx/, '');
+  // event_ticker e.g. "WRECSS-26" → "wrecss-26"
+  const eventTicker = (m.event_ticker || '').toLowerCase();
+  // If we have an event ticker, build deep link; otherwise fall back to series page
+  let url;
+  if (seriesSlug && seriesTitleSlug && eventTicker) {
+    url = `https://kalshi.com/markets/${seriesSlug}/${seriesTitleSlug}/${eventTicker}`;
+  } else if (seriesSlug) {
+    url = `https://kalshi.com/markets/${seriesSlug}`;
+  } else {
+    url = `https://kalshi.com/markets/${(m.ticker||'').toLowerCase()}`;
+  }
+
+  const score = m._score || 0;
+
+  // Show event ticker as a tag so the user knows which event this market is in
+  const eventTag = eventTicker
+    ? `<span class="k-meta-tag" style="color:#6af;font-family:monospace">${(m.event_ticker||'').toUpperCase()}</span>`
+    : '';
+
+  const metaTags = [
+    m.category ? `<span class="k-meta-tag">${m.category}</span>` : '',
+    eventTag,
+    `<span class="k-meta-tag">${daysLeft}d</span>`,
+    `<span class="k-meta-tag">vol ${vol}</span>`,
+    showScore ? `<div class="k-score-bar"><div class="k-score-fill" style="width:${Math.round(score*100)}%"></div></div>` : '',
+    `<a class="k-market-link" href="${url}" target="_blank">↗ kalshi</a>`,
+    showScore ? `<a class="k-market-link k-why-link" href="/match_detail?ticker=${encodeURIComponent(m.ticker)}" target="_blank">⊙ why matched</a>` : '',
+  ].join('');
+
+  // In match tab: add "Show all in event" expander
+  const siblingExpander = showScore && eventTicker
+    ? `<span class="k-sibling-link" onclick="kExpandEventSiblings(this,'${m.event_ticker}','${m.series_ticker}')" style="cursor:pointer;font-size:10px;color:#4a8fff;margin-left:8px;text-decoration:underline;text-underline-offset:2px">show all in event ↓</span>`
+    : '';
+
+  return `<div class="k-market" data-event="${m.event_ticker || ''}">
+    <div class="k-market-top">
+      ${showScore ? `<div class="k-market-prob k-match-conf"><span class="k-conf-num">${score.toFixed(2)}</span><span class="k-conf-label">match</span></div>` : `<div class="k-market-prob">${yesCents}%</div>`}
+      <div class="k-market-title">${m.title || m.ticker}</div>
+      <div class="k-market-prices">
+        <div class="k-price-col">
+          <div class="k-price-col-label">Yes</div>
+          <div class="k-price-box yes">${yesCents}¢</div>
+        </div>
+        <div class="k-price-col">
+          <div class="k-price-col-label">No</div>
+          <div class="k-price-box no">${noCents}¢</div>
+        </div>
+      </div>
+    </div>
+    ${m.subtitle ? `<div style="font-size:10px;color:#555;padding-left:40px;line-height:1.4;margin-top:1px">${m.subtitle}</div>` : ''}
+    <div class="k-market-meta" style="padding-left:40px">${metaTags}${siblingExpander}</div>
+  </div>`;
+}
+
+// ── Status bar ─────────────────────────────────────────────────────────────────
+function kSetStatus(key, info) {
+  const el = document.getElementById('k-status-text');
+  if (!el) return;
+  const st = (typeof info === 'object' && info) ? info.status : key;
+  if (st === 'ok') {
+    const lu  = info && info.last_updated ? relTime(info.last_updated) : '—';
+    const cnt = info && info.count        ? ' · ' + info.count + ' total' : '';
+    el.className   = 'k-status-text ok';
+    el.textContent = `Data from ${lu}${cnt}`;
+  } else if (st === 'error') {
+    el.className   = 'k-status-text err';
+    const errMsg = (info && info.error) || (typeof info === 'string' ? info : 'unknown');
+    el.textContent = `Error: ${errMsg} — visit /api/kalshi/diag for details`;
+  } else if (st === 'fetching') {
+    const cnt  = info && info.count      ? ` · ${info.count} mkts` : '';
+    const pg   = info && info.pull_page  ? ` p${info.pull_page}` : '';
+    const ser  = info && info.series_count ? ` · ${info.series_count} series` : '';
+    el.className   = 'k-status-text';
+    el.textContent = `Fetching from Kalshi${ser}${cnt}${pg}…`;
+    // Series may be ready even while markets are still loading — refresh UI
+    if (info && info.series_count && info.series_count > 0 && kAllSeries.length === 0) {
+      kLoadSeries();
+    }
+  } else {
+    el.className   = 'k-status-text';
+    el.textContent = 'Initializing…';
+  }
+}
+
+// ── Manual refresh ─────────────────────────────────────────────────────────────
+async function kManualRefresh() {
+  const btn = document.querySelector('.k-refresh-btn');
+  if (btn) btn.textContent = '↻ Refreshing…';
+  try {
+    await fetch(KALSHI_API + '/refresh', { method: 'POST' });
+    const poll = setInterval(async () => {
+      try {
+        const r = await fetch(KALSHI_API + '/status');
+        const s = await r.json();
+        kSetStatus(s.status, s);
+        if (s.status !== 'fetching') {
+          clearInterval(poll);
+          if (btn) btn.textContent = '↻ Refresh';
+          // Reload series in case categories changed
+          kLoadSeries();
+          if (kActiveSeries) kFetchMarkets();
+        }
+      } catch(e) { clearInterval(poll); if (btn) btn.textContent = '↻ Refresh'; }
+    }, 2000);
+  } catch(e) {
+    if (btn) btn.textContent = '↻ Refresh';
+  }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+kUpdatePriceRange();
+kUpdateDaysRange();
+kUpdateConfidence();
+kLoadSeries();
+// Run match in background always — results ready when tab is opened
+setInterval(() => { kFetchMatch(); }, 30000);
+// Also run once at startup after a short delay so corpus warms up
+setTimeout(() => { kFetchMatch(); }, 8000);
+
+// ── Debug overlay (Shift+D) ────────────────────────────────────────────────────
+const _debugOverlay = document.createElement('div');
+_debugOverlay.id = 'debug-overlay';
+_debugOverlay.style.cssText = 'display:none;position:fixed;top:60px;right:10px;width:420px;max-height:80vh;overflow:auto;background:#111;color:#0f0;font-family:monospace;font-size:10px;padding:14px;border:1px solid #333;border-radius:6px;z-index:99999;line-height:1.6';
+document.body.appendChild(_debugOverlay);
+
+async function showDebug() {
+  _debugOverlay.style.display = _debugOverlay.style.display === 'none' ? '' : 'none';
+  if (_debugOverlay.style.display === 'none') return;
+  _debugOverlay.textContent = 'Loading debug info…';
+  try {
+    const r = await fetch('/api/debug');
+    const d = await r.json();
+    const lines = [
+      '=== SYSTEM DEBUG (Shift+D to close) ===',
+      '',
+      '── KALSHI ──',
+      `  status:    ${d.kalshi.status}`,
+      `  error:     ${d.kalshi.error || 'none'}`,
+      `  markets:   ${d.kalshi.markets_count}`,
+      `  series:    ${d.kalshi.series_count}`,
+      `  pull_page: ${d.kalshi.pull_page}`,
+      `  updated:   ${d.kalshi.last_updated || 'never'}`,
+      `  sample:    ${d.kalshi.sample_market}`,
+      `  series[]:  ${(d.kalshi.sample_series||[]).join(', ')}`,
+      '',
+      '── BLUESKY ──',
+      `  status:    ${d.bluesky.status}`,
+      `  posts:     ${d.bluesky.posts_cached}`,
+      `  has_token: ${d.bluesky.has_token}`,
+      `  token_ttl: ${d.bluesky.token_expiry_in_secs}s`,
+      `  updated:   ${d.bluesky.last_updated || 'never'}`,
+      `  accounts:  ${d.bluesky.priority_handles_count}`,
+      '',
+      '── EVENTS ──',
+      `  count: ${d.events.count}`,
+      `  ${d.events.sample.join('\n  ')}`,
+      '',
+      '── JS STATE ──',
+      `  kAllSeries:     ${kAllSeries.length} entries`,
+      `  kActiveCategory: ${kActiveCategory}`,
+      `  kActiveSeries:  ${kActiveSeries}`,
+      `  kFetching:      ${kFetching}`,
+      `  kFetchingAt:    ${kFetchingAt ? (Date.now()-kFetchingAt)+'ms ago' : 'never'}`,
+      `  kMatchAllMkts:  ${(kMatchAllMarkets||[]).length}`,
+      `  seenPostUris:   ${seenPostUris.size}`,
+      `  seenEventIds:   ${seenEventIds.size}`,
+      `  countdown:      ${countdown}s`,
+    ];
+    _debugOverlay.textContent = lines.join('\n');
+  } catch(e) {
+    _debugOverlay.textContent = 'Debug fetch failed: ' + e.message;
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.shiftKey && e.key === 'D') showDebug();
+});
+
+// ── Startup status poller ──────────────────────────────────────────────────────
+(async function kPollUntilReady() {
+  const INTERVAL = 3000;
+  const MAX_WAIT = 5 * 60 * 1000;
+  const started  = Date.now();
+  try {
+    const r = await fetch(KALSHI_API + '/status');
+    const s = await r.json();
+    kSetStatus(s.status, s);
+    if (s.status !== 'fetching' && s.status !== 'initializing') return;
+  } catch(e) { return; }
+  const timer = setInterval(async () => {
+    if (Date.now() - started > MAX_WAIT) { clearInterval(timer); return; }
+    try {
+      const r = await fetch(KALSHI_API + '/status');
+      const s = await r.json();
+      kSetStatus(s.status, s);  // kSetStatus will call kLoadSeries if series ready
+      if (s.status === 'ok' || s.status === 'error') {
+        clearInterval(timer);
+        kLoadSeries();  // always reload on completion regardless of ok/error
+      }
+    } catch(e) { clearInterval(timer); }
+  }, INTERVAL);
+})();
+
+</script>
+</body>
+</html>

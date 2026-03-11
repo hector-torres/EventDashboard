@@ -1,0 +1,51 @@
+# accounts.txt — Priority Accounts for Event Detection
+# ─────────────────────────────────────────────────────
+# One handle per line. The @ prefix is optional.
+# Lines starting with # are comments and are ignored.
+# Blank lines are ignored.
+#
+# Posts from these accounts count 3x toward event detection thresholds,
+# so a single priority post is as strong as 3 regular posts.
+#
+# To reload this file without restarting the server:
+#   POST http://localhost:5001/api/accounts/reload
+#
+# ─────────────────────────────────────────────────────
+
+nytimes.com
+washingtonpost.com
+wsj.com
+cnn.com
+nbcnews.com
+cbsnews.com
+latimes.com
+expressnews.com
+apnews.com
+reuters.com
+npr.org
+ms.now
+financialtimes.com
+bloomberg.com
+theguardian.com
+chicagotribune.com
+usatoday.com
+cnbc.com
+axios.com
+thehill.com
+politico.com
+economist.com
+thediplomat.com
+asia.nikkei.com
+scmp.com
+japantimes.co.jp
+aljazeera.com
+politico.eu
+sydmorningherald.bsky.social
+en.afp.com
+dallasnews.com
+fintwitter.bsky.social
+unusualwhales.bsky.social
+thejerusalempost.bsky.social
+globalnews.ca
+news.sky.com
+spectatorindexen.bsky.social

@@ -159,6 +159,23 @@ def kalshi_series():
             st = parts[0] if len(parts) == 2 else et
         if st:
             active_tickers.add(st)
+
+    # Fallback: if the series cache is empty (e.g. series fetch timed out on startup),
+    # synthesize minimal series objects from the active tickers on stored markets so
+    # the browse UI still works. Full series metadata arrives once the background
+    # series fetch completes and the cache is populated.
+    if not series and active_tickers:
+        cat_map = kalshi_manager._cat_map
+        series = [
+            {
+                'ticker':    t,
+                'title':     t,   # title will be enriched once real series data arrives
+                'category':  cat_map.get(t, ''),
+                'frequency': '',
+            }
+            for t in sorted(active_tickers)
+        ]
+
     return jsonify({'series': series, 'active_tickers': sorted(active_tickers)})
 
 @app.route('/api/kalshi/markets')
@@ -307,9 +324,10 @@ def kalshi_match_detail():
     """
     For a given market ticker, return per-text match scores showing
     exactly which events/posts drove the semantic match.
+    Uses market-side coverage scoring (same as the main matcher).
     Query params: ticker (required), threshold (optional, default 0.05)
     """
-    from kalshi_feed import similarity
+    from kalshi_feed import _expand_tokens, _index_market_tokens, score_market_against_corpus
     ticker    = request.args.get('ticker', '').upper()
     threshold = float(request.args.get('threshold', 0.05))
 
@@ -322,35 +340,49 @@ def kalshi_match_detail():
     if not market:
         return jsonify({'error': f'Market {ticker} not found in cache'}), 404
 
+    _index_market_tokens(market)  # ensure _tok is present
+    market_tok = market.get('_tok', frozenset())
+
     events = event_detector.get_events()
     posts  = feed_manager.get_cached_posts()
-    market_text = f"{market.get('title','')} {market.get('subtitle','') or ''}".strip()
 
     scored_texts = []
 
+    # Score each event individually: build a single-item corpus per event
     for e in events:
-        text = f"{e.get('title','')} {e.get('keyword','')}".strip()
-        if not text:
-            continue
-        score = similarity(market_text, text)
-        if score >= threshold:
-            scored_texts.append({
-                'source':      'event',
-                'text':        text,
-                'score':       round(score, 4),
-                'severity':    e.get('severity', ''),
-                'strategy':    e.get('strategy', ''),
-                'keyword':     e.get('keyword', ''),
-                'post_count':  e.get('post_count', 0),
-                'detected_at': e.get('detected_at', ''),
-                'sample_posts': e.get('sample_posts', [])[:3],
-            })
+        sev = e.get('severity', '')
+        # Use sample_posts for richer text, same as the main corpus builder
+        texts = [p for p in e.get('sample_posts', [])[:2] if p and len(p.strip()) > 20]
+        texts.append(e.get('title', ''))
+        for text in texts:
+            if not text:
+                continue
+            tok = _expand_tokens(text)
+            if not tok:
+                continue
+            score = len(market_tok & tok) / len(market_tok) if market_tok else 0.0
+            if score >= threshold:
+                scored_texts.append({
+                    'source':      'event',
+                    'text':        text,
+                    'score':       round(score, 4),
+                    'severity':    sev,
+                    'strategy':    e.get('strategy', ''),
+                    'keyword':     e.get('keyword', ''),
+                    'post_count':  e.get('post_count', 0),
+                    'detected_at': e.get('detected_at', ''),
+                })
+                break  # one entry per event (best text already picked)
 
+    # Score each post individually
     for p in posts[:60]:
         text = p.get('text', '').strip()
         if not text:
             continue
-        score = similarity(market_text, text)
+        tok = _expand_tokens(text)
+        if not tok:
+            continue
+        score = len(market_tok & tok) / len(market_tok) if market_tok else 0.0
         if score >= threshold:
             scored_texts.append({
                 'source':  'post',
@@ -363,14 +395,23 @@ def kalshi_match_detail():
             })
 
     scored_texts.sort(key=lambda x: x['score'], reverse=True)
-    overall_score = max((x['score'] for x in scored_texts), default=0.0)
+    # Deduplicate: keep only highest-scoring entry per unique text
+    seen = set()
+    deduped = []
+    for item in scored_texts:
+        key = item['text'][:80]
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+
+    overall_score = max((x['score'] for x in deduped), default=0.0)
 
     return jsonify({
         'ticker':        ticker,
         'market_title':  market.get('title', ''),
-        'market_text':   market_text,
+        'market_text':   f"{market.get('title','')} {market.get('subtitle','') or ''}".strip(),
         'overall_score': round(overall_score, 4),
-        'matches':       scored_texts[:30],
+        'matches':       deduped[:30],
         'threshold':     threshold,
     })
 

@@ -154,14 +154,26 @@ def _fetch_all_open_markets() -> Tuple[List[Dict], Optional[str]]:
             params += f'&cursor={cursor}'
         url = MARKETS_URL + params
 
-        try:
-            req  = urllib.request.Request(url, headers={'Accept': 'application/json'})
-            with urllib.request.urlopen(req, context=_ssl_ctx, timeout=30) as resp:
-                data = json.loads(resp.read().decode())
-        except urllib.error.HTTPError as e:
-            return markets, f'HTTP {e.code}: {e.reason}'
-        except Exception as e:
-            return markets, str(e)
+        # Retry up to 3 times on transient errors (timeout, connection reset)
+        data = None
+        last_err = None
+        for attempt in range(3):
+            try:
+                req  = urllib.request.Request(url, headers={'Accept': 'application/json'})
+                with urllib.request.urlopen(req, context=_ssl_ctx, timeout=60) as resp:
+                    data = json.loads(resp.read().decode())
+                last_err = None
+                break
+            except urllib.error.HTTPError as e:
+                return markets, f'HTTP {e.code}: {e.reason}'  # don't retry HTTP errors
+            except Exception as e:
+                last_err = str(e)
+                logger.warning(f'[Kalshi] Page {page} attempt {attempt+1} failed: {e} — retrying…')
+                time.sleep(2 ** attempt)  # 1s, 2s, 4s back-off
+        if data is None:
+            # All retries exhausted — return what we have so far
+            logger.error(f'[Kalshi] Pagination stopped at page {page}: {last_err}')
+            return markets, last_err
 
         raw_batch = data.get('markets', [])
         # Filter out blocked parlay series — use raw_batch for pagination control
@@ -232,24 +244,33 @@ def _fetch_series() -> tuple:
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode    = ssl.CERT_NONE
 
-    try:
-        req = urllib.request.Request(SERIES_URL, headers={'Accept': 'application/json'})
-        with urllib.request.urlopen(req, context=ssl_ctx, timeout=30) as resp:
-            body = json.loads(resp.read().decode())
+    body = None
+    last_exc = None
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(SERIES_URL, headers={'Accept': 'application/json'})
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=60) as resp:
+                body = json.loads(resp.read().decode())
+            break
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(f'[Kalshi] Series fetch attempt {attempt+1} failed: {exc}')
+            if attempt < 2:
+                time.sleep(2 ** attempt)
 
-        series = body.get('series', [])
-        logger.info(f'[Kalshi] Fetched {len(series)} series entries.')
+    if body is None:
+        logger.error(f'[Kalshi] Series fetch failed after 3 attempts: {last_exc}')
+        return [], str(last_exc)
 
-        if series:
-            os.makedirs(DATA_DIR, exist_ok=True)
-            with open(SERIES_DEBUG_FILE, 'w') as f:
-                json.dump(series[0], f, indent=2)
+    series = body.get('series', [])
+    logger.info(f'[Kalshi] Fetched {len(series)} series entries.')
 
-        return series, None
+    if series:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(SERIES_DEBUG_FILE, 'w') as f:
+            json.dump(series[0], f, indent=2)
 
-    except Exception as exc:
-        logger.error(f'[Kalshi] Series fetch failed: {exc}')
-        return [], str(exc)
+    return series, None
 
 
 def _build_series_prefix_index(series_tickers: list) -> list:
@@ -710,10 +731,14 @@ class KalshiFeedManager:
                 self.status  = 'error'
                 logger.error(f'[Kalshi] Pull failed: {err}')
                 return
-            if not markets:
-                # Fetch succeeded but returned nothing — likely all pages were blocked series.
-                # Keep existing data rather than wiping.
-                logger.warning('[Kalshi] Pull returned 0 markets after filtering — keeping existing data.')
+            # Sanity check: don't overwrite a healthy cache with a tiny partial result
+            # (can happen if the API times out after only a few pages)
+            existing_count = len(self._markets)
+            if len(markets) < max(1000, existing_count // 2):
+                logger.warning(
+                    f'[Kalshi] Pull returned only {len(markets)} markets '
+                    f'(had {existing_count}) — keeping existing data to avoid partial overwrite.'
+                )
                 self.status = 'ok'
                 return
             self._markets     = markets

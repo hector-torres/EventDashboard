@@ -59,6 +59,10 @@ def index():
 def dashboard():
     return send_from_directory('.', 'dashboard.html')
 
+@app.route('/markets')
+def markets():
+    return send_from_directory('.', 'markets.html')
+
 # ─── Bluesky / Events routes ──────────────────────────────────────────────────
 
 @app.route('/api/posts')
@@ -187,8 +191,9 @@ def kalshi_markets():
     category      = request.args.get('category')      or None
     series_ticker = request.args.get('series_ticker') or None
     event_ticker  = request.args.get('event_ticker')  or None
-    min_price = float(request.args.get('min_price', 0.01))
-    max_price = float(request.args.get('max_price', 0.99))
+    search_query  = (request.args.get('q') or '').strip().lower()
+    min_price = float(request.args.get('min_price', 0))
+    max_price = float(request.args.get('max_price', 100))
     min_days  = request.args.get('min_days')
     max_days  = request.args.get('max_days')
     page      = max(1, int(request.args.get('page', 1)))
@@ -203,6 +208,15 @@ def kalshi_markets():
         min_days      = float(min_days) if min_days else None,
         max_days      = float(max_days) if max_days else None,
     )
+
+    # Text search filter (applied after fetch, title + subtitle)
+    if search_query:
+        markets = [
+            m for m in markets
+            if search_query in (m.get('title') or '').lower()
+            or search_query in (m.get('subtitle') or '').lower()
+            or search_query in (m.get('ticker') or '').lower()
+        ]
 
     total       = len(markets)
     total_pages = max(1, -(-total // per_page))

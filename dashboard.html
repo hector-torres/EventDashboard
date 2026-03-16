@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Event Dashboard</title>
+  <title>Event Trading Terminal</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -28,17 +28,30 @@
       width: 100%;
       background: #111111;
       border-bottom: 1px solid #252525;
-      padding: 14px 32px;
+      padding: 0 18px;
+      height: 40px;
       display: flex;
       align-items: center;
-      justify-content: center;
-      position: relative;
+      gap: 0;
       flex-shrink: 0;
     }
+    .title-bar-nav {
+      display: flex; align-items: stretch; margin-left: 24px; gap: 0;
+    }
+    .title-bar-nav a {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+      text-transform: uppercase; text-decoration: none;
+      color: #444; padding: 0 14px;
+      display: flex; align-items: center;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .title-bar-nav a:hover { color: #888; }
+    .title-bar-nav a.active { color: #4477dd; border-bottom-color: #4477dd; }
 
     .title-bar-text {
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 13px;
+      font-weight: 700;
       letter-spacing: 0.18em;
       color: #e2e2e2;
       text-transform: uppercase;
@@ -906,7 +919,7 @@
       flex-shrink: 0;
     }
     .k-sort-label {
-      font-size: 8px; font-weight: 700; letter-spacing: 0.18em;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
       text-transform: uppercase; color: #444; margin-right: 8px;
     }
     .k-sort-btn {
@@ -928,19 +941,28 @@
     }
     .k-col:last-child { border-right: none; }
     .k-col-header {
-      font-size: 8px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
-      color: #555; padding: 8px 12px 6px; border-bottom: 1px solid #141414;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+      color: #666; padding: 8px 12px 6px; border-bottom: 1px solid #141414;
       background: #0b0b0b; flex-shrink: 0;
     }
     .k-col-scroll { flex: 1; overflow-y: auto; }
+    /* Category columns: no scroll, show all rows */
+    .k-col-cat .k-col-scroll {
+      overflow-y: visible !important; overflow-x: visible !important;
+      flex: none;
+    }
+    .mp-cat-pane .k-col-scroll {
+      overflow-y: visible !important; overflow-x: visible !important;
+      flex: none;
+    }
 
     /* Category column */
-    .k-col-cat  { width: 110px; flex-shrink: 0; }
+    .k-col-cat  { width: fit-content; min-width: 90px; max-width: 180px; flex-shrink: 0; }
     .k-cat-row {
-      padding: 7px 12px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+      padding: 8px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
       color: #777; cursor: pointer; border-bottom: 1px solid #111;
       display: flex; align-items: center; justify-content: space-between; gap: 6px;
-      transition: background 0.1s, color 0.1s;
+      transition: background 0.1s, color 0.1s; white-space: nowrap;
     }
     .k-cat-row:hover { background: #0f0f0f; color: #bbb; }
     .k-cat-row.active { background: rgba(20,40,120,0.18); color: #4477dd; }
@@ -977,11 +999,11 @@
     .k-series-row:hover { background: #0f0f0f; }
     .k-series-row.active { background: rgba(20,40,120,0.14); }
     .k-series-title {
-      font-size: 11px; font-weight: 600; color: #888; line-height: 1.35;
+      font-size: 13px; font-weight: 600; color: #aaa; line-height: 1.35;
     }
     .k-series-row.active .k-series-title { color: #5588ee; }
     .k-series-meta {
-      font-size: 9px; color: #555; margin-top: 2px; letter-spacing: 0.04em;
+      font-size: 11px; color: #555; margin-top: 2px; letter-spacing: 0.03em;
     }
 
     /* Markets column */
@@ -993,11 +1015,11 @@
       display: flex; align-items: center; gap: 8px; flex-shrink: 0; background: #0b0b0b;
     }
     .k-filter-label {
-      font-size: 8px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
       color: #666; flex-shrink: 0;
     }
     .k-filter-value {
-      font-size: 9px; color: #777; white-space: nowrap; flex-shrink: 0;
+      font-size: 10px; color: #777; white-space: nowrap; flex-shrink: 0;
       font-variant-numeric: tabular-nums;
     }
 
@@ -1032,7 +1054,7 @@
     .k-market:hover { background: #0f0f0f; }
     .k-market-top { display: flex; align-items: center; gap: 8px; }
     .k-market-prob {
-      font-size: 18px; font-weight: 700; color: #999;
+      font-size: 20px; font-weight: 700; color: #999;
       letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
       flex-shrink: 0; min-width: 32px;
     }
@@ -1041,7 +1063,7 @@
       min-width: 36px; gap: 1px;
     }
     .k-conf-num {
-      font-size: 16px; font-weight: 700; color: #4a8fff;
+      font-size: 18px; font-weight: 700; color: #4a8fff;
       letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
       line-height: 1;
     }
@@ -1051,7 +1073,7 @@
       line-height: 1;
     }
     .k-market-title {
-      flex: 1; font-size: 11px; font-weight: 600; color: #999;
+      flex: 1; font-size: 13px; font-weight: 600; color: #bbb;
       line-height: 1.4; min-width: 0;
     }
     .k-market-prices { display: flex; gap: 4px; flex-shrink: 0; }
@@ -1068,12 +1090,12 @@
     .k-price-box.no  { color: #cc4433; background: rgba(80,20,15,0.25); border-color: rgba(110,30,20,0.4); }
     .k-market-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .k-meta-tag {
-      font-size: 8px; color: #666; letter-spacing: 0.06em;
+      font-size: 9px; color: #666; letter-spacing: 0.04em;
       background: #111; padding: 1px 4px; border: 1px solid #1a1a1a;
     }
     .k-score-bar { flex: 1; height: 2px; background: #1a1a1a; min-width: 30px; max-width: 70px; }
     .k-score-fill { height: 100%; background: #2255cc; }
-    .k-market-link { font-size: 9px; color: #555; text-decoration: none; transition: color 0.1s; }
+    .k-market-link { font-size: 11px; color: #555; text-decoration: none; transition: color 0.1s; }
     .k-market-link:hover { color: #4477dd; }
     .k-why-link { color: #2a4a22 !important; }
     .k-why-link:hover { color: #4a8a3a !important; }
@@ -1085,13 +1107,13 @@
       flex-shrink: 0; background: #0d0d0d;
     }
     .k-page-btn {
-      font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
       color: #666; background: none; border: 1px solid #2a2a2a;
       padding: 2px 7px; cursor: pointer; transition: color 0.1s, border-color 0.1s;
     }
     .k-page-btn:hover:not(:disabled) { color: #888; border-color: #444; }
     .k-page-btn:disabled { opacity: 0.25; cursor: default; }
-    .k-page-info { font-size: 9px; color: #777; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
+    .k-page-info { font-size: 10px; color: #777; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
 
     /* Match tab controls */
     .k-filters {
@@ -1108,7 +1130,7 @@
       padding: 6px 14px; border-top: 1px solid #141414;
       background: #0a0a0a; flex-shrink: 0;
     }
-    .k-status-text { font-size: 10px; color: #666; letter-spacing: 0.06em; }
+    .k-status-text { font-size: 11px; color: #666; letter-spacing: 0.04em; }
     .k-status-text.ok { color: #1a4a1a; }
     .k-status-text.err { color: #4a1a1a; }
     .k-refresh-btn {
@@ -1117,6 +1139,15 @@
       padding: 2px 7px; cursor: pointer; transition: color 0.1s;
     }
     .k-refresh-btn:hover { color: #666; border-color: #333; }
+    .dash-pause-btn {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      background: none; border: 1px solid #1e1e1e; padding: 2px 8px;
+      cursor: pointer; color: #2a2a2a; transition: all 0.15s; white-space: nowrap;
+    }
+    .dash-pause-btn:hover { color: #888; border-color: #444; }
+    .dash-pause-btn.paused {
+      color: #cc8800; border-color: #664400; background: rgba(100,60,0,0.12);
+    }
   </style>
 </head>
 <body>
@@ -1124,8 +1155,16 @@
 
   <!-- Title bar -->
   <div class="title-bar">
-    <div class="title-bar-text">Event Dashboard</div>
-    <div class="title-bar-brand">KLTT Holdings</div>
+    <div class="title-bar-text">Event Trading Terminal</div>
+    <nav class="title-bar-nav">
+      <a href="/">Home</a>
+      <a href="/dashboard" class="active">Event Dashboard</a>
+      <a href="/markets">Market Dashboard</a>
+    </nav>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+      <button class="dash-pause-btn" id="dash-pause-btn" onclick="dashTogglePause()">⏸ Pause</button>
+      <div class="title-bar-brand">KLTT Holdings</div>
+    </div>
   </div>
   <div class="accent-line"></div>
 
@@ -1245,7 +1284,7 @@
       <div class="panel-header">
         <div class="panel-title-group">
           <div class="panel-bar" style="background:#003388"></div>
-          <div class="panel-title" style="color:#2255aa">Kalshi Markets</div>
+          <div class="panel-title" style="color:#2255aa">Market Dashboard</div>
           <div class="panel-count" id="kalshi-count">—</div>
         </div>
       </div>
@@ -1463,9 +1502,52 @@ function isNearDuplicate(fp) {
 }
 
 // ── Countdown ─────────────────────────────────────────
+// ── Pause / auto-refresh control ─────────────────────────────────────────────
+const DASH_PAUSE_DURATION = 5 * 60; // 5 minutes
+let dashPaused        = false;
+let dashPauseSecsLeft = 0;
+let dashPauseTimer    = null;
+let dashKalshiInterval = null;
+
+function dashStartKalshiInterval() {
+  if (dashKalshiInterval) clearInterval(dashKalshiInterval);
+  dashKalshiInterval = dashStartKalshiInterval(); // managed by pause system
+}
+
+function dashTogglePause() {
+  const btn = document.getElementById('dash-pause-btn');
+  if (dashPaused) {
+    // Resume
+    dashPaused = false;
+    if (dashPauseTimer) { clearInterval(dashPauseTimer); dashPauseTimer = null; }
+    dashStartKalshiInterval();
+    if (btn) { btn.textContent = '⏸ Pause'; btn.classList.remove('paused'); }
+  } else {
+    // Pause — stop countdown from triggering fetchAll
+    dashPaused = true;
+    dashPauseSecsLeft = DASH_PAUSE_DURATION;
+    if (dashKalshiInterval) { clearInterval(dashKalshiInterval); dashKalshiInterval = null; }
+    dashPauseTimer = setInterval(() => {
+      dashPauseSecsLeft--;
+      const b = document.getElementById('dash-pause-btn');
+      if (dashPauseSecsLeft <= 0) {
+        dashTogglePause(); // auto-resume
+      } else {
+        const m = Math.floor(dashPauseSecsLeft / 60);
+        const s = dashPauseSecsLeft % 60;
+        if (b) { b.textContent = `▶ ${m}:${s.toString().padStart(2,'0')} (+5m)`; b.classList.add('paused'); }
+      }
+    }, 1000);
+    if (btn) { btn.textContent = '▶ 5:00 (+5m)'; btn.classList.add('paused'); }
+  }
+}
+
 setInterval(() => {
   countdown--;
-  if (countdown <= 0) { countdown = POLL_SECS; fetchAll(); }
+  if (countdown <= 0) {
+    countdown = POLL_SECS;
+    if (!dashPaused) fetchAll(); // skip fetch when paused
+  }
   document.getElementById('countdownFill').style.width = ((countdown / POLL_SECS) * 100) + '%';
 }, 1000);
 
@@ -2116,7 +2198,17 @@ async function kLoadSeries(attempt) {
     const d = await r.json();
     // active_tickers: set of series tickers that have at least one open market
     const active = new Set(d.active_tickers || []);
-    kAllSeries = (d.series || []).filter(s => active.size === 0 || active.has(s.ticker));
+    const filtered = (d.series || []).filter(s => active.size === 0 || active.has(s.ticker));
+
+    // Detect synthesized fallback: server series cache not ready yet
+    const hasRealCats = filtered.some(s => s.category && s.category !== '' && s.category !== 'Other');
+    if (!hasRealCats && filtered.length > 0) {
+      if (catList) catList.innerHTML = '<div style="padding:12px;font-size:10px;color:#666">Building index… (' + attempt + ')</div>';
+      if (attempt < 15) setTimeout(() => kLoadSeries(attempt + 1), 4000);
+      return;
+    }
+
+    kAllSeries = filtered;
     kBuildCategoryColumn();
   } catch(e) {
     console.warn('[Kalshi] Series load failed:', e);
@@ -2733,7 +2825,7 @@ function kRenderMarket(m, showScore) {
         </div>
       </div>
     </div>
-    ${m.subtitle ? `<div style="font-size:10px;color:#555;padding-left:40px;line-height:1.4;margin-top:1px">${m.subtitle}</div>` : ''}
+    ${m.subtitle ? `<div style="font-size:11px;color:#555;padding-left:40px;line-height:1.4;margin-top:2px">${m.subtitle}</div>` : ''}
     <div class="k-market-meta" style="padding-left:40px">${metaTags}${siblingExpander}</div>
   </div>`;
 }
@@ -2794,13 +2886,12 @@ async function kManualRefresh() {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-kLoadExcludedCats();   // restore hidden categories from last session
 kUpdatePriceRange();
 kUpdateDaysRange();
 kUpdateConfidence();
 kLoadSeries();
 // Run match in background always — results ready when tab is opened
-setInterval(() => { kFetchMatch(); }, 30000);
+dashStartKalshiInterval(); // managed by pause system
 // Also run once at startup after a short delay so corpus warms up
 setTimeout(() => { kFetchMatch(); }, 8000);
 
@@ -2889,5 +2980,82 @@ document.addEventListener('keydown', e => {
 })();
 
 </script>
+
+  <!-- ── Loading overlay (shown while Kalshi markets are still fetching) ── -->
+  <div id="loading-overlay" style="display:none;position:fixed;inset:0;z-index:9999;
+       background:rgba(8,8,8,0.94);backdrop-filter:blur(4px);
+       flex-direction:column;align-items:center;justify-content:center;gap:18px;">
+    <div style="width:48px;height:48px;border:2px solid #1a1a1a;border-top-color:#4477dd;
+                border-radius:50%;animation:spin 1s linear infinite;"></div>
+    <div style="text-align:center;">
+      <div style="font-size:13px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;
+                  color:#4477dd;margin-bottom:8px;">Loading Market Dashboard</div>
+      <div id="overlay-status" style="font-size:11px;color:#444;letter-spacing:0.06em;">
+        Fetching market data…
+      </div>
+      <div style="font-size:10px;color:#2a2a2a;margin-top:6px;">
+        Page will refresh automatically when ready
+      </div>
+    </div>
+  </div>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <script>
+  (function() {
+    var THRESHOLD  = 1000;  // min markets before we consider data loaded
+    var POLL_MS    = 3000;  // check every 3s
+    var overlay    = document.getElementById('loading-overlay');
+    var statusEl   = document.getElementById('overlay-status');
+    var pollTimer  = null;
+    var shown      = false;
+
+    function checkLoaded() {
+      fetch('/api/kalshi/status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          var count = d.count || 0;
+          if (statusEl) {
+            statusEl.textContent = count > 0
+              ? count.toLocaleString() + ' markets loaded…'
+              : 'Connecting to Kalshi API…';
+          }
+          if (count >= THRESHOLD) {
+            // Data is ready
+            clearInterval(pollTimer);
+            if (shown) {
+              // We showed the overlay — data just finished loading.
+              // Dismiss and trigger a fresh series/match load without a full page reload.
+              if (overlay) overlay.style.display = 'none';
+              // Reset retry counters so load functions run fresh
+              if (typeof _mpRetry !== 'undefined') _mpRetry = 0;
+              // Call the page's own load functions
+              if (typeof mpLoadSeries  === 'function') mpLoadSeries();
+              if (typeof kLoadSeries   === 'function') kLoadSeries(1);
+              if (typeof mpFetchMatch  === 'function') mpFetchMatch();
+              if (typeof mpUpdateStatus=== 'function') mpUpdateStatus();
+            } else {
+              // Data was already loaded when page opened — just hide overlay (already hidden)
+              if (overlay) overlay.style.display = 'none';
+            }
+          } else {
+            // Not ready — show overlay
+            if (overlay && !shown) {
+              overlay.style.display = 'flex';
+              shown = true;
+            }
+          }
+        })
+        .catch(function() {
+          if (statusEl) statusEl.textContent = 'Waiting for server…';
+          if (overlay && !shown) { overlay.style.display = 'flex'; shown = true; }
+        });
+    }
+
+    // Check immediately, then poll
+    checkLoaded();
+    pollTimer = setInterval(checkLoaded, POLL_MS);
+  })();
+  </script>
 </body>
 </html>

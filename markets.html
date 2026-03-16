@@ -1,0 +1,2785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Market Dashboard — Event Trading Terminal</title>
+  <style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #0a0a0a;
+      color: #d0d0d0;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-weight: 400;
+      overflow: hidden;
+    }
+
+    /* ── Page stack ── */
+    .page {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Title bar ── */
+    .title-bar {
+      width: 100%;
+      background: #111111;
+      border-bottom: 1px solid #252525;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .title-bar-text {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      color: #e2e2e2;
+      text-transform: uppercase;
+    }
+
+    .title-bar-brand {
+      position: absolute;
+      right: 32px;
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      color: #505050;
+    }
+
+    .accent-line {
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg,
+        transparent 0%, #6b0000 15%, #cc1100 40%,
+        #aa0000 60%, #5a0000 85%, transparent 100%);
+      flex-shrink: 0;
+    }
+
+    /* ── Market indices bar ── */
+    .market-bar-wrap {
+      width: 100%;
+      background: #0d0d0d;
+      border-bottom: 1px solid #1a1a1a;
+      flex-shrink: 0;
+      display: grid;
+      /* col 1 = label sidebar (narrow — vertical text), col 2 = tiles area, col 3 = updated panel */
+      grid-template-columns: 28px 1fr auto;
+      grid-template-rows: auto auto;
+    }
+
+    /* Label sidebar spans both rows */
+    .market-bar-labels {
+      grid-column: 1;
+      grid-row: 1 / 3;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1e1e1e;
+      background: #111;
+    }
+
+    .market-bar-label {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      color: #444;
+      text-transform: uppercase;
+      white-space: nowrap;
+      text-align: center;
+      padding: 8px 0;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);  /* bottom-to-top reading direction */
+    }
+
+    .market-bar-label.row1-label {
+      border-bottom: 1px solid #1e1e1e;
+      min-height: 88px;
+    }
+
+    .market-bar-label.row2-label {
+      color: #333;
+      min-height: 80px;
+    }
+
+    /* Tiles rows */
+    .market-bar-row {
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+    }
+
+    .market-bar-row.row1 {
+      grid-column: 2; grid-row: 1;
+      min-height: 88px;
+      border-bottom: 1px solid #161616;
+    }
+
+    .market-bar-row.row2 {
+      grid-column: 2; grid-row: 2;
+      min-height: 80px;
+      background: #0b0b0b;
+    }
+
+    .market-bar-row::-webkit-scrollbar { height: 2px; }
+    .market-bar-row::-webkit-scrollbar-thumb { background: #222; }
+
+    /* Updated panel spans both rows */
+    .market-updated {
+      grid-column: 3;
+      grid-row: 1 / 3;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+      border-left: 1px solid #1a1a1a;
+      min-width: 90px;
+    }
+
+    .market-updated-label {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #2e2e2e;
+      margin-bottom: 3px;
+    }
+
+    .market-updated-time {
+      font-size: 10px;
+      color: #3a3a3a;
+      letter-spacing: 0.05em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .market-tile {
+      flex: 1;
+      min-width: 155px;
+      border-right: 1px solid #1a1a1a;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      text-align: center;
+      transition: background 0.15s;
+    }
+
+    .market-tile:last-of-type { border-right: none; }
+    .market-tile:hover { background: #111; }
+
+    .market-tile.up   { border-top: 2px solid #1a5c1a; }
+    .market-tile.down { border-top: 2px solid #6b0000; }
+    .market-tile.flat { border-top: 2px solid #333; }
+    .market-tile.loading { border-top: 2px solid #222; }
+
+    .tile-top {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .tile-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #ccc;
+      text-transform: uppercase;
+    }
+
+    .tile-status {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 1px 5px;
+    }
+
+    .status-open    { color: #2a7a2a; background: rgba(30,100,30,0.15); border: 1px solid rgba(30,100,30,0.25); }
+    .status-closed  { color: #555;    background: #141414;               border: 1px solid #1e1e1e; }
+    .status-futures { color: #886633; background: rgba(120,90,30,0.15); border: 1px solid rgba(120,90,30,0.25); }
+
+    .tile-price {
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0em;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      margin: 2px 0;
+      opacity: 0.7;
+    }
+
+    .tile-price.up   { color: #3a9e3a; }
+    .tile-price.down { color: #cc2200; }
+    .tile-price.flat { color: #aaa; }
+
+    .tile-change {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+    .tile-change.up   { color: #2d7a2d; }
+    .tile-change.down { color: #aa1a00; }
+    .tile-change.flat { color: #888; }
+
+    .tile-meta {
+      display: flex;
+      gap: 10px;
+      margin-top: 5px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .tile-meta-item {
+      font-size: 10px;
+      color: #666;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    .tile-meta-item strong { color: #999; font-weight: 600; }
+
+    .tile-time {
+      font-size: 9px;
+      color: #666;
+      letter-spacing: 0.06em;
+      margin-top: 3px;
+    }
+
+    .tile-countdown {
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.04em;
+      margin-top: 2px;
+    }
+
+    .tile-countdown.closing { color: #5a3a1a; }
+    .tile-countdown.opening { color: #1a3a1a; }
+
+    .tile-sparkline {
+      display: inline-block;
+      height: 22px;
+      margin-top: 5px;
+      overflow: visible;
+    }
+    .tile-sparkline-wrap {
+      text-align: center;
+      width: 100%;
+    }
+    .sparkline-line {
+      fill: none; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .sparkline-line.up   { stroke: rgba(45,122,45,0.9); }
+    .sparkline-line.down { stroke: rgba(170,26,0,0.9); }
+    .sparkline-line.flat { stroke: rgba(80,80,80,0.8); }
+    .sparkline-fill.up   { fill: rgba(45,122,45,0.12); stroke: none; }
+    .sparkline-fill.down { fill: rgba(170,26,0,0.12); stroke: none; }
+    .sparkline-fill.flat { fill: rgba(80,80,80,0.10); stroke: none; }
+    .sparkline-open-line { stroke: rgba(160,160,160,0.45); stroke-width: 0.75; stroke-dasharray: 2.5 2; }
+
+    /* ── Market tile tooltip ─────────────────────────── */
+    .market-tile { position: relative; }
+
+    .tile-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1c1c1c;
+      border: 1px solid #2e2e2e;
+      color: #777;
+      font-size: 10px;
+      line-height: 1.55;
+      padding: 7px 11px;
+      border-radius: 3px;
+      z-index: 200;
+      pointer-events: none;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.7);
+      width: max-content;
+      max-width: 280px;
+      white-space: normal;
+    }
+    .tile-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%; left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: #2e2e2e;
+    }
+    .market-tile:hover .tile-tooltip { display: block; }
+
+
+
+    /* ── Countdown bar ── */
+    .countdown-bar {
+      width: 100%;
+      height: 2px;
+      background: #151515;
+      flex-shrink: 0;
+    }
+
+    .countdown-fill {
+      height: 100%;
+      background: #8b0000;
+      transition: width 1s linear;
+    }
+
+    /* ── 3-panel layout ── */
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1a1a1a;
+      overflow: hidden;
+      background: #0a0a0a;
+    }
+
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      padding: 13px 20px;
+      border-bottom: 1px solid #1a1a1a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: #0d0d0d;
+    }
+
+    .panel-title-group { display: flex; align-items: center; gap: 10px; flex: 1; justify-content: center; }
+
+    .panel-bar { width: 2px; height: 14px; flex-shrink: 0; }
+
+    .panel-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+    }
+
+    .panel-count {
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      color: #3a3a3a;
+      background: #141414;
+      border: 1px solid #1e1e1e;
+      padding: 2px 8px;
+    }
+
+    .panel-right { display: flex; align-items: center; gap: 10px; }
+
+    .panel-status {
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.12em;
+      color: #444;
+    }
+
+    .live-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: #cc0000;
+      animation: blink 1.4s ease infinite;
+    }
+
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+    .panel-btn {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #444;
+      background: none;
+      border: 1px solid #222;
+      padding: 3px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .panel-btn:hover { color: #888; border-color: #444; }
+
+    /* ── Keyword spike chip bar ──────────────────────── */
+    .spike-bar {
+      padding: 7px 14px 6px;
+      border-bottom: 1px solid #161616;
+      background: #0c0c0c;
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .spike-bar-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: #2e2e2e;
+      text-transform: uppercase;
+      white-space: nowrap;
+      margin-right: 2px;
+    }
+    .spike-bar-empty {
+      font-size: 10px;
+      color: #242424;
+      letter-spacing: 0.08em;
+      font-style: italic;
+    }
+    .spike-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px 2px 7px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.12s;
+      border: 1px solid #2a1a00;
+      background: #141000;
+      color: #444;
+    }
+    .spike-chip.active {
+      border-color: #664400;
+      background: rgba(100,60,0,0.18);
+      color: #cc8800;
+    }
+    .spike-chip .chip-count {
+      font-size: 10px;
+      opacity: 0.6;
+    }
+    .spike-chip .chip-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.5;
+    }
+    .panel-btn.btn-active {
+      color: #cc8800; border-color: #553300;
+      background: rgba(90,50,0,0.15);
+    }
+
+    .panel-btn.active {
+      color: #cc8800;
+      border-color: #664400;
+      background: rgba(100,60,0,0.12);
+    }
+
+    .panel-btn.toggle-medium {
+      font-size: 10px;
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .panel-body::-webkit-scrollbar { width: 2px; }
+    .panel-body::-webkit-scrollbar-thumb { background: #222; }
+
+    .panel-footer {
+      border-top: 1px solid #1a1a1a;
+      padding: 9px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: #0d0d0d;
+    }
+
+    .footer-stat {
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+      color: #383838;
+    }
+
+    .footer-stat strong { color: #555; font-weight: 600; }
+
+    /* ══ PANEL 1: FEED ══════════════════════════════ */
+
+    .feed-item {
+      padding: 13px 20px;
+      border-bottom: 1px solid #141414;
+      transition: background 0.1s;
+      animation: fadeInItem 0.25s ease;
+    }
+
+    @keyframes fadeInItem {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .feed-item:hover { background: #0f0f0f; }
+
+    .feed-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+
+    .feed-avatar {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: #1a1a1a;
+      border: 1px solid #222;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #444;
+      overflow: hidden;
+    }
+
+    .feed-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+
+    .feed-author { flex: 1; min-width: 0; }
+
+    .feed-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: #bbb;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.03em;
+    }
+
+    .feed-handle { font-size: 11px; color: #444; }
+    .feed-time   { font-size: 11px; color: #333; letter-spacing: 0.04em; flex-shrink: 0; }
+
+    .feed-badge {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 1px 5px;
+      flex-shrink: 0;
+    }
+
+    .feed-badge.breaking { background: rgba(180,0,0,0.15); color: #cc2200; border: 1px solid rgba(180,0,0,0.3); }
+    .feed-badge.normal   { background: #141414; color: #333; border: 1px solid #1e1e1e; }
+    .feed-badge.priority { background: rgba(180,120,0,0.15); color: #cc8800; border: 1px solid rgba(180,120,0,0.3); }
+    .feed-badge.repeat   { background: rgba(40,40,80,0.25); color: #4455aa; border: 1px solid rgba(60,60,120,0.35); }
+
+    .feed-text {
+      font-size: 13px;
+      font-weight: 300;
+      line-height: 1.6;
+      color: #888;
+      margin-bottom: 7px;
+      word-break: break-word;
+    }
+
+    .feed-stats { display: flex; gap: 14px; align-items: center; }
+
+    .feed-stat { font-size: 11px; color: #2e2e2e; letter-spacing: 0.05em; }
+
+    .feed-link {
+      font-size: 11px; color: #3a3a3a;
+      text-decoration: none; letter-spacing: 0.08em;
+      margin-left: auto; transition: color 0.15s;
+    }
+
+    .feed-link:hover { color: #888; }
+
+    .state-loading { padding: 48px 20px; text-align: center; }
+
+    .spinner {
+      width: 24px; height: 24px;
+      border: 1px solid #1e1e1e;
+      border-top-color: #8b0000;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 14px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .state-text {
+      font-size: 11px; font-weight: 400;
+      letter-spacing: 0.2em; text-transform: uppercase; color: #333;
+    }
+
+    .state-empty {
+      padding: 40px 20px; text-align: center;
+      font-size: 12px; letter-spacing: 0.12em; color: #2e2e2e; text-transform: uppercase;
+    }
+
+    /* ══ SPLIT FEED PANEL ══════════════════════════ */
+
+    .feed-panel-inner {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .feed-half {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* Priority half gets a warm amber left-border accent */
+    .feed-half.news-half {
+      border-left: 2px solid #5a3800;
+    }
+
+    /* Search half gets a red left-border accent */
+    .feed-half.search-half {
+      border-left: 2px solid #3a0000;
+    }
+
+    .feed-half-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 16px 8px 14px;
+      border-bottom: 1px solid #1e1e1e;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .feed-half-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    .feed-half-count {
+      font-size: 11px;
+      color: #333;
+      letter-spacing: 0.06em;
+      position: absolute;
+      right: 14px;
+    }
+
+    /* News header: dark amber tint */
+    .feed-half-header.news-header {
+      background: #120d00;
+      border-top: 1px solid #2a1a00;
+    }
+
+    /* Search header: dark red tint */
+    .feed-half-header.search-header {
+      background: #0e0505;
+      border-top: 1px solid #1e0808;
+    }
+
+    /* Search Feed info button + tooltip */
+    .sf-info-btn {
+      font-size: 10px; color: #551100; cursor: pointer;
+      user-select: none; opacity: 0.7; line-height: 1;
+      transition: opacity 0.15s;
+    }
+    .sf-info-btn:hover { opacity: 1; color: #cc4400; }
+    .sf-tooltip {
+      display: none; position: absolute; z-index: 200;
+      left: 8px; top: calc(100% + 4px);
+      width: 260px;
+      background: #0f0f0f; border: 1px solid #2a1a0a;
+      border-radius: 4px; padding: 10px 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+      pointer-events: none;
+    }
+    .sf-tooltip.visible { display: block; }
+    .sf-tooltip-title {
+      font-size: 10px; font-weight: 700; color: #cc4400;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .sf-tooltip-body {
+      font-size: 10px; color: #888; line-height: 1.55;
+    }
+
+    /* Thick divider between the two halves */
+    .feed-half-divider {
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, #1a0d00 0%, #1e1010 50%, #0a0a0a 100%);
+      flex-shrink: 0;
+      border-top: 1px solid #2a1a00;
+      border-bottom: 1px solid #200808;
+    }
+
+    .feed-half-body {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .feed-half-body::-webkit-scrollbar { width: 2px; }
+    .feed-half-body::-webkit-scrollbar-thumb { background: #222; }
+
+    .feed-half-empty {
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      color: #282828;
+      text-transform: uppercase;
+      line-height: 1.6;
+    }
+
+    /* ══ PANEL 2: EVENTS ════════════════════════════ */
+
+    .event-item {
+      padding: 13px 20px 13px 22px;
+      border-bottom: 1px solid #141414;
+      position: relative;
+      transition: background 0.1s;
+      animation: fadeInItem 0.25s ease;
+      cursor: pointer;
+    }
+
+    .event-item:hover { background: #0f0f0f; }
+
+    .event-sev-line { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
+    .sev-CRITICAL { background: #cc0020; }
+    /* P6: Event lifecycle status badges */
+    .evt-status-badge {
+      display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+      padding: 1px 5px; border-radius: 2px; margin-left: 6px; vertical-align: middle;
+      text-transform: uppercase;
+    }
+    .evt-status-breaking  { background: rgba(204,0,32,0.18); color: #ff4455; border: 1px solid rgba(204,0,32,0.4); animation: blink-badge 1.4s ease-in-out infinite; }
+    .evt-status-developing{ background: rgba(200,130,0,0.18); color: #ffaa33; border: 1px solid rgba(200,130,0,0.4); }
+    .evt-status-active    { background: rgba(30,80,30,0.18);  color: #66cc66; border: 1px solid rgba(30,80,30,0.4); }
+    .evt-status-stale     { background: rgba(50,50,50,0.18);  color: #555;    border: 1px solid rgba(80,80,80,0.3); }
+    @keyframes blink-badge { 0%,100%{opacity:1} 50%{opacity:0.45} }
+    .sev-HIGH     { background: #cc5500; }
+    .sev-MEDIUM   { background: #997700; }
+
+    .event-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+
+    .event-title { font-size: 13px; font-weight: 600; color: #bbb; line-height: 1.4; flex: 1; }
+
+    .event-sev {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      padding: 1px 5px; flex-shrink: 0;
+    }
+
+    .sev-badge-CRITICAL { background: rgba(180,0,20,0.15);  color: #cc0020; border: 1px solid rgba(180,0,20,0.3); }
+    .sev-badge-HIGH     { background: rgba(180,80,0,0.15);  color: #cc5500; border: 1px solid rgba(180,80,0,0.3); }
+    .sev-badge-MEDIUM   { background: rgba(140,110,0,0.15); color: #aa8800; border: 1px solid rgba(140,110,0,0.3); }
+
+    .event-samples { margin-bottom: 7px; }
+
+    .event-sample {
+      font-size: 14px; font-weight: 300;
+      color: #666; line-height: 1.6;
+      border-left: 1px solid #222;
+      padding-left: 8px; margin-bottom: 4px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      letter-spacing: 0.01em;
+    }
+
+    .event-meta { display: flex; gap: 12px; align-items: center; }
+    .event-tag  { font-size: 11px; color: #333; letter-spacing: 0.05em; }
+    .event-tag strong { color: #555; }
+
+    .event-expand-btn {
+      font-size: 10px; color: #2a2a2a; letter-spacing: 0.06em;
+      background: none; border: none; cursor: pointer; padding: 0;
+      margin-left: auto; user-select: none; transition: color 0.1s;
+      pointer-events: all;
+    }
+    .event-expand-btn:hover { color: #666; }
+
+    .event-posts {
+      display: none;
+      margin-top: 8px;
+      border-top: 1px solid #1a1a1a;
+      padding-top: 6px;
+    }
+    .event-item.expanded .event-posts { display: block; }
+
+    .event-post-row {
+      display: flex; gap: 8px; padding: 5px 0;
+      border-bottom: 1px solid #141414; align-items: flex-start;
+    }
+    .event-post-row:last-child { border-bottom: none; }
+    .event-post-handle {
+      font-size: 10px; color: #3a3a3a; white-space: nowrap;
+      flex-shrink: 0; padding-top: 2px;
+    }
+    .event-post-handle.news-src { color: #885500; }
+    .event-post-text {
+      font-size: 13px; color: #555; line-height: 1.5; flex: 1; min-width: 0;
+    }
+    .event-post-link {
+      font-size: 11px; color: #2a2a2a; text-decoration: none;
+      flex-shrink: 0; padding-top: 2px;
+    }
+    .event-post-link:hover { color: #888; }
+
+    /* ══ PANEL 3: KALSHI ════════════════════════════ */
+
+    /* Sub-tab bar */
+    /* Sub-tabs */
+    .k-tabs {
+      display: flex; border-bottom: 1px solid #1a1a1a;
+      flex-shrink: 0; background: #0d0d0d;
+    }
+    .k-tab {
+      flex: 1; padding: 9px 0;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #333; text-align: center; cursor: pointer;
+      border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+    }
+    .k-tab:hover { color: #666; }
+    .k-tab.active { color: #2255cc; border-bottom-color: #2255cc; }
+
+    /* ── Browse search bar ─────────────────── */
+    .k-search-bar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px;
+      border-bottom: 1px solid #161616;
+      background: #0c0c0c;
+      flex-shrink: 0;
+    }
+    .k-search-input {
+      flex: 1; background: #111; border: 1px solid #1e1e1e;
+      color: #ccc; font-size: 10px; font-family: inherit;
+      padding: 3px 8px; outline: none;
+      transition: border-color 0.15s;
+    }
+    .k-search-input::placeholder { color: #333; }
+    .k-search-input:focus { border-color: #2a3a6a; }
+    .k-search-clear {
+      font-size: 11px; color: #333; cursor: pointer; padding: 0 2px;
+      transition: color 0.1s; background: none; border: none; line-height: 1;
+    }
+    .k-search-clear:hover { color: #888; }
+
+    /* ── Sort strip ─────────────────────── */
+    .k-sort-strip {
+      display: flex; align-items: center; gap: 0;
+      padding: 4px 10px;
+      border-bottom: 1px solid #161616;
+      background: #0c0c0c;
+      flex-shrink: 0;
+    }
+    .k-sort-label {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #444; margin-right: 8px;
+    }
+    .k-sort-btn {
+      font-size: 9px; font-weight: 600; letter-spacing: 0.06em;
+      color: #444; background: none; border: none; cursor: pointer;
+      padding: 2px 7px; transition: color 0.1s; font-family: inherit;
+    }
+    .k-sort-btn:hover { color: #888; }
+    .k-sort-btn.active { color: #4477dd; }
+
+    /* ── Browse layout: 3 columns ─────────── */
+    .k-browse {
+      flex: 1; display: flex; overflow: hidden; min-height: 0;
+    }
+    /* Column shared styles */
+    .k-col {
+      display: flex; flex-direction: column; overflow: hidden;
+      border-right: 1px solid #141414;
+    }
+    .k-col:last-child { border-right: none; }
+    .k-col-header {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+      color: #666; padding: 8px 12px 6px; border-bottom: 1px solid #141414;
+      background: #0b0b0b; flex-shrink: 0;
+    }
+    .k-col-scroll { flex: 1; overflow-y: auto; }
+
+    /* Category column */
+    .k-col-cat  { width: fit-content; min-width: 90px; max-width: 200px; flex-shrink: 0; }
+    .k-cat-row {
+      padding: 8px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+      color: #777; cursor: pointer; border-bottom: 1px solid #111;
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      transition: background 0.1s, color 0.1s; white-space: nowrap;
+    }
+    .k-cat-row:hover { background: #0f0f0f; color: #bbb; }
+    .k-cat-row.active { background: rgba(20,40,120,0.18); color: #4477dd; }
+    .k-cat-count {
+      font-size: 9px; font-weight: 700; color: #222;
+      font-variant-numeric: tabular-nums;
+    }
+    .k-cat-row.active .k-cat-count { color: #2a4a99; }
+
+    /* Category toggle styles */
+    .k-cat-toggle-row { gap: 4px; }
+    .k-cat-toggle-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .k-cat-eye {
+      font-size: 9px; flex-shrink: 0; cursor: pointer; border-radius: 10px;
+      padding: 1px 5px; border: 1px solid #2a6; color: #2a6;
+      background: rgba(34,170,102,0.10);
+      transition: all 0.15s; white-space: nowrap; user-select: none;
+      line-height: 14px;
+    }
+    .k-cat-eye:hover { background: rgba(34,170,102,0.25); color: #3cf; border-color: #3cf; }
+    .k-cat-excluded .k-cat-eye { color: #555; border-color: #333; background: rgba(80,80,80,0.10); }
+    .k-cat-excluded .k-cat-eye:hover { color: #aaa; border-color: #666; background: rgba(80,80,80,0.25); }
+    .k-cat-excluded .k-cat-toggle-label { color: #333; text-decoration: line-through; }
+    .k-cat-excluded .k-cat-count { color: #222; }
+    .k-cat-excluded:hover { background: #0a0a0a; color: #555; }
+    .k-cat-excluded.active { background: transparent; }
+
+    /* Series column */
+    .k-col-series { flex: 1; min-width: 0; }
+    .k-series-row {
+      padding: 8px 12px; border-bottom: 1px solid #111;
+      cursor: pointer; transition: background 0.1s;
+    }
+    .k-series-row:hover { background: #0f0f0f; }
+    .k-series-row.active { background: rgba(20,40,120,0.14); }
+    .k-series-title {
+      font-size: 13px; font-weight: 600; color: #aaa; line-height: 1.35;
+    }
+    .k-series-row.active .k-series-title { color: #5588ee; }
+    .k-series-meta {
+      font-size: 11px; color: #555; margin-top: 2px; letter-spacing: 0.03em;
+    }
+
+    /* Markets column */
+    .k-col-markets { flex: 1.4; min-width: 0; display: flex; flex-direction: column; }
+
+    /* Slim price/days filter bar above markets */
+    .k-mkt-filters {
+      padding: 7px 12px; border-bottom: 1px solid #141414;
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0; background: #0b0b0b;
+    }
+    .k-filter-label {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+      color: #666; flex-shrink: 0;
+    }
+    .k-filter-value {
+      font-size: 10px; color: #777; white-space: nowrap; flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* range slider */
+    .k-range-wrap { flex: 1; display: flex; align-items: center; position: relative; height: 16px; }
+    .k-range-track { flex: 1; height: 2px; background: #1e1e1e; position: relative; border-radius: 1px; }
+    .k-range-fill  { position: absolute; height: 100%; background: #2255cc; border-radius: 1px; }
+    input[type=range].k-slider {
+      position: absolute; width: 100%; margin: 0;
+      -webkit-appearance: none; appearance: none;
+      height: 2px; background: transparent; cursor: pointer; outline: none;
+      pointer-events: none;
+    }
+    input[type=range].k-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 10px; height: 10px;
+      background: #2255cc; border-radius: 50%;
+      border: 1px solid #3366ee; cursor: pointer; pointer-events: all;
+    }
+    input[type=range].k-slider::-moz-range-thumb {
+      width: 10px; height: 10px; background: #2255cc; border-radius: 50%;
+      border: 1px solid #3366ee; cursor: pointer;
+    }
+    input[type=range].k-slider.single { pointer-events: all; }
+    .k-slider-divider { width: 1px; height: 14px; background: #1e1e1e; flex-shrink: 0; }
+    #k-conf-fill { left: 0 !important; }
+
+    /* market card */
+    .k-market {
+      padding: 9px 12px; border-bottom: 1px solid #111;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .k-market:hover { background: #0f0f0f; }
+    .k-market-top { display: flex; align-items: center; gap: 8px; }
+    .k-market-prob {
+      font-size: 20px; font-weight: 700; color: #999;
+      letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+      flex-shrink: 0; min-width: 32px;
+    }
+    .k-match-conf {
+      display: flex; flex-direction: column; align-items: center;
+      min-width: 36px; gap: 1px;
+    }
+    .k-conf-num {
+      font-size: 18px; font-weight: 700; color: #4a8fff;
+      letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .k-conf-label {
+      font-size: 8px; font-weight: 600; color: #2a4a88;
+      text-transform: uppercase; letter-spacing: 0.12em;
+      line-height: 1;
+    }
+    .k-market-title {
+      flex: 1; font-size: 13px; font-weight: 600; color: #bbb;
+      line-height: 1.4; min-width: 0;
+    }
+    .k-market-prices { display: flex; gap: 4px; flex-shrink: 0; }
+    .k-price-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .k-price-col-label {
+      font-size: 8px; font-weight: 700; letter-spacing: 0.15em;
+      text-transform: uppercase; color: #2a2a2a;
+    }
+    .k-price-box {
+      font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+      padding: 2px 6px; min-width: 30px; text-align: center; border: 1px solid transparent;
+    }
+    .k-price-box.yes { color: #33bb66; background: rgba(20,80,35,0.25); border-color: rgba(30,100,50,0.4); }
+    .k-price-box.no  { color: #cc4433; background: rgba(80,20,15,0.25); border-color: rgba(110,30,20,0.4); }
+    .k-market-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .k-meta-tag {
+      font-size: 9px; color: #666; letter-spacing: 0.04em;
+      background: #111; padding: 1px 4px; border: 1px solid #1a1a1a;
+    }
+    .k-score-bar { flex: 1; height: 2px; background: #1a1a1a; min-width: 30px; max-width: 70px; }
+    .k-score-fill { height: 100%; background: #2255cc; }
+    .k-market-link { font-size: 11px; color: #555; text-decoration: none; transition: color 0.1s; }
+    .k-market-link:hover { color: #4477dd; }
+    .k-why-link { color: #2a4a22 !important; }
+    .k-why-link:hover { color: #4a8a3a !important; }
+
+    /* pagination strip inside markets column */
+    .k-pagination {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 7px 12px; border-top: 1px solid #141414;
+      flex-shrink: 0; background: #0d0d0d;
+    }
+    .k-page-btn {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+      color: #666; background: none; border: 1px solid #2a2a2a;
+      padding: 2px 7px; cursor: pointer; transition: color 0.1s, border-color 0.1s;
+    }
+    .k-page-btn:hover:not(:disabled) { color: #888; border-color: #444; }
+    .k-page-btn:disabled { opacity: 0.25; cursor: default; }
+    .k-page-info { font-size: 10px; color: #777; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+
+    /* Match tab controls */
+    .k-filters {
+      padding: 10px 14px; border-bottom: 1px solid #141414;
+      display: flex; flex-direction: column; gap: 9px;
+      flex-shrink: 0; background: #0b0b0b;
+    }
+    .k-filter-row { display: flex; align-items: center; gap: 10px; }
+    #k-match-controls .k-filter-label { width: 74px; }
+
+    /* status bar at bottom of panel */
+    .k-status-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 14px; border-top: 1px solid #141414;
+      background: #0a0a0a; flex-shrink: 0;
+    }
+    .k-status-text { font-size: 11px; color: #666; letter-spacing: 0.04em; }
+    .k-status-text.ok { color: #1a4a1a; }
+    .k-status-text.err { color: #4a1a1a; }
+    .k-refresh-btn {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #2a2a2a; background: none; border: 1px solid #1e1e1e;
+      padding: 2px 7px; cursor: pointer; transition: color 0.1s;
+    }
+    .k-refresh-btn:hover { color: #666; border-color: #333; }
+
+    /* ═══════════════════════════════════════════════════
+       MARKETS PAGE — override / extend base styles
+       ═══════════════════════════════════════════════════ */
+
+    /* Title bar: flex row, no overlap */
+    .mp-title-bar {
+      display: flex;
+      align-items: center;
+      background: #111111;
+      border-bottom: 1px solid #252525;
+      padding: 0 18px;
+      height: 38px;
+      flex-shrink: 0;
+      gap: 0;
+    }
+    .mp-title-brand {
+      font-size: 13px; font-weight: 700; letter-spacing: 0.18em;
+      text-transform: uppercase; color: #e2e2e2; white-space: nowrap;
+    }
+    .mp-title-nav {
+      display: flex; align-items: stretch; margin-left: 28px; gap: 0;
+    }
+    .mp-title-nav a {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+      text-transform: uppercase; text-decoration: none;
+      color: #444; padding: 0 14px;
+      display: flex; align-items: center;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .mp-title-nav a:hover { color: #888; }
+    .mp-title-nav a.active { color: #4477dd; border-bottom-color: #4477dd; }
+    .mp-title-right {
+      margin-left: auto;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #2a2a2a; white-space: nowrap;
+    }
+
+    /* Page sub-header strip */
+    .mp-subheader {
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 16px; height: 32px;
+      border-bottom: 1px solid #181818; background: #0d0d0d;
+      flex-shrink: 0;
+    }
+    .mp-subheader-label {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.16em;
+      text-transform: uppercase; color: #4477dd;
+    }
+    .mp-subheader-status {
+      font-size: 9px; color: #2a2a2a; font-style: italic;
+    }
+    .mp-refresh-btn {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: #333; background: none; border: 1px solid #222;
+      padding: 3px 10px; cursor: pointer; border-radius: 2px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .mp-refresh-btn:hover { color: #888; border-color: #555; }
+    .mp-pause-btn {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; background: none; border: 1px solid #222;
+      padding: 3px 10px; cursor: pointer; border-radius: 2px;
+      color: #333; transition: all 0.15s; white-space: nowrap;
+    }
+    .mp-pause-btn:hover { color: #888; border-color: #555; }
+    .mp-pause-btn.paused {
+      color: #cc8800; border-color: #664400;
+      background: rgba(100,60,0,0.12);
+    }
+    .mp-subheader-right {
+      margin-left: auto; display: flex; align-items: center; gap: 6px;
+    }
+
+    /* ── 3-col equal layout ── */
+    .mp-layout {
+      flex: 1; display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      overflow: hidden; min-height: 0;
+    }
+    .mp-col {
+      display: flex; flex-direction: column; overflow: hidden;
+      border-right: 1px solid #1a1a1a;
+    }
+    .mp-col:last-child { border-right: none; }
+    .mp-col-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 14px; height: 40px;
+      border-bottom: 1px solid #141414; background: #0c0c0c;
+      flex-shrink: 0;
+    }
+    .mp-col-title {
+      font-size: 13px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #666;
+    }
+    .mp-col-meta {
+      font-size: 9px; color: #252525; font-style: italic;
+      margin-left: auto; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 55%;
+    }
+
+    /* ── Browse col: cat + series side-by-side ── */
+    .mp-browse-inner {
+      flex: 0 0 auto; display: flex; overflow: hidden; min-height: 0;
+      /* Series list: give it a capped portion so markets still get good space */
+      height: 35vh; max-height: 380px;
+    }
+    /* .mp-cat-pane removed — category sidebar replaced by pill filters */
+    .mp-series-pane {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* ── Match col ── */
+    .mp-conf-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 12px; border-bottom: 1px solid #141414;
+      background: #0b0b0b; flex-shrink: 0;
+    }
+    .mp-cat-filter-row {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+      padding: 5px 12px; border-bottom: 1px solid #141414;
+      background: #0b0b0b; flex-shrink: 0;
+    }
+
+    /* ── Strategy col ── */
+    .mp-strategy-body {
+      flex: 1; overflow-y: auto;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px 20px; gap: 12px; text-align: center;
+    }
+    .mp-strategy-body svg { opacity: 0.08; display: block; margin: 0 auto 12px; }
+    .mp-strategy-body p {
+      font-size: 10px; line-height: 1.65; color: #252525; max-width: 200px;
+    }
+    .mp-strategy-body p + p { color: #1a1a1a; font-size: 9px; margin-top: 4px; }
+
+    /* ── Strategy panel ──────────────────────────────────────────────── */
+    .strat-tabs {
+      display: flex; border-bottom: 1px solid #161616;
+      background: #0b0b0b; flex-shrink: 0;
+    }
+    .strat-tab {
+      flex: 1; padding: 7px 0; text-align: center;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #444; cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .strat-tab:hover { color: #888; }
+    .strat-tab.active { color: #4477dd; border-bottom-color: #4477dd; }
+
+    /* Strategy tab tooltips */
+    .strat-tab { position: relative; }
+    .strat-tab-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%; transform: translateX(-50%);
+      width: 200px;
+      background: #1a1a1a; border: 1px solid #2a2a2a;
+      padding: 8px 10px; border-radius: 3px;
+      font-size: 10px; font-weight: 400; line-height: 1.55;
+      color: #888; letter-spacing: 0.02em; text-transform: none;
+      z-index: 300; pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+      white-space: normal; text-align: left;
+    }
+    .strat-tab-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%; left: 50%; transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: #2a2a2a;
+    }
+    .strat-tab:hover .strat-tab-tooltip { display: block; }
+
+    .strat-filter-strip {
+      padding: 6px 10px; border-bottom: 1px solid #141414;
+      background: #0b0b0b; flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .strat-filter-group {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+    }
+    .strat-filter-label {
+      font-size: 8px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #555; margin-right: 2px; white-space: nowrap;
+    }
+    .strat-filter-divider {
+      width: 1px; height: 12px; background: #222; margin: 0 4px;
+    }
+    .strat-day-btn, .strat-range-btn {
+      font-size: 9px; font-weight: 600; padding: 2px 7px;
+      background: none; border: 1px solid #222; color: #444;
+      cursor: pointer; border-radius: 2px; font-family: inherit;
+      transition: all 0.12s; letter-spacing: 0.04em;
+    }
+    .strat-day-btn:hover, .strat-range-btn:hover { color: #888; border-color: #444; }
+    .strat-day-btn.active, .strat-range-btn.active {
+      color: #4477dd; border-color: #2a4a99;
+      background: rgba(20,40,120,0.18);
+    }
+
+    /* Strategy market card */
+    .strat-card {
+      padding: 10px 12px; border-bottom: 1px solid #111;
+      display: flex; flex-direction: column; gap: 5px;
+      transition: background 0.1s; position: relative;
+    }
+    .strat-card:hover { background: #0f0f0f; }
+    .strat-card-top {
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .strat-urgency-block {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2px; flex-shrink: 0; min-width: 38px;
+    }
+    .strat-days-num {
+      font-size: 18px; font-weight: 700; line-height: 1;
+      font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+    }
+    .strat-days-num.urgent   { color: #cc3300; }
+    .strat-days-num.soon     { color: #cc8800; }
+    .strat-days-num.moderate { color: #557722; }
+    .strat-days-label {
+      font-size: 8px; font-weight: 700; color: #333;
+      text-transform: uppercase; letter-spacing: 0.1em;
+    }
+    .strat-card-title {
+      font-size: 12px; font-weight: 600; color: #bbb;
+      line-height: 1.4; flex: 1; min-width: 0;
+    }
+    .strat-prices {
+      display: flex; gap: 4px; flex-shrink: 0; align-items: flex-start;
+    }
+    .strat-price-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .strat-price-label {
+      font-size: 8px; font-weight: 700; letter-spacing: 0.12em; color: #2a2a2a;
+      text-transform: uppercase;
+    }
+    .strat-price-val {
+      font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+      padding: 2px 5px; min-width: 30px; text-align: center; border: 1px solid transparent;
+    }
+    .strat-price-val.yes { color: #33bb66; background: rgba(20,80,35,0.25); border-color: rgba(30,100,50,0.4); }
+    .strat-price-val.no  { color: #cc4433; background: rgba(80,20,15,0.25); border-color: rgba(110,30,20,0.4); }
+    .strat-card-meta {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-left: 46px;
+    }
+    .strat-signal {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+      padding: 2px 6px; border-radius: 2px; text-transform: uppercase;
+    }
+    .strat-signal.undecided {
+      color: #aa8800; background: rgba(140,110,0,0.15);
+      border: 1px solid rgba(140,110,0,0.35);
+    }
+    .strat-signal.extreme-low {
+      color: #4a8fff; background: rgba(20,60,150,0.18);
+      border: 1px solid rgba(40,80,180,0.35);
+    }
+    .strat-signal.extreme-high {
+      color: #33bb66; background: rgba(20,80,35,0.18);
+      border: 1px solid rgba(30,100,50,0.35);
+    }
+    .strat-meta-tag {
+      font-size: 9px; color: #444; background: #111;
+      padding: 1px 5px; border: 1px solid #1a1a1a;
+    }
+    /* Urgency bar across bottom of card */
+    .strat-urgency-bar {
+      height: 2px; width: 100%; background: #111; margin-top: 2px; border-radius: 1px;
+    }
+    .strat-urgency-fill {
+      height: 100%; border-radius: 1px;
+      transition: width 0.3s;
+    }
+    .strat-urgency-fill.urgent   { background: #cc3300; }
+    .strat-urgency-fill.soon     { background: #cc8800; }
+    .strat-urgency-fill.moderate { background: #557722; }
+
+    .strat-empty {
+      padding: 30px 16px; text-align: center;
+      font-size: 10px; color: #252525; line-height: 1.7;
+    }
+    .strat-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 12px; border-top: 1px solid #141414;
+      background: #0a0a0a; flex-shrink: 0;
+    }
+    .strat-count { font-size: 10px; color: #333; letter-spacing: 0.06em; }
+    .strat-refresh-btn {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+      color: #2a2a2a; background: none; border: 1px solid #1e1e1e;
+      padding: 2px 8px; cursor: pointer; transition: color 0.15s;
+    }
+    .strat-refresh-btn:hover { color: #666; border-color: #444; }
+    .strat-loading {
+      padding: 30px 16px; text-align: center;
+      font-size: 10px; color: #2a2a2a;
+    }
+
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Title bar ─────────────────────────────────────────────────────── -->
+  <div class="mp-title-bar">
+    <div class="mp-title-brand">Event Trading Terminal</div>
+    <nav class="mp-title-nav">
+      <a href="/">Home</a>
+      <a href="/dashboard">Event Dashboard</a>
+      <a href="/markets" class="active">Market Dashboard</a>
+    </nav>
+    <div class="mp-title-right">KLTT Holdings</div>
+  </div>
+  <div class="accent-line"></div>
+
+  <!-- ── Sub-header ────────────────────────────────────────────────────── -->
+  <div class="mp-subheader">
+    <div class="mp-subheader-label">| Market Dashboard</div>
+    <div class="mp-subheader-status" id="mp-status-txt">Loading…</div>
+    <div class="mp-subheader-right">
+      <button class="mp-pause-btn" id="mp-pause-btn" onclick="mpTogglePause()">⏸ Pause</button>
+      <button class="mp-refresh-btn" onclick="mpRefresh()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- ── 3-column layout ───────────────────────────────────────────────── -->
+  <div class="mp-layout">
+
+    <!-- ══ Col 1: Browse ══════════════════════════════════════════════════ -->
+    <div class="mp-col">
+      <div class="mp-col-header">
+        <div class="mp-col-title">Browse</div>
+        <div class="mp-col-meta" id="mp-series-header-lbl">Select a category</div>
+      </div>
+
+      <!-- Category filter pills -->
+      <div class="mp-cat-filter-row" id="mp-browse-cat-row" style="flex-shrink:0;">
+        <span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#2a2a2a;">loading…</span>
+      </div>
+
+      <!-- Search bar -->
+      <div class="k-search-bar" style="flex-shrink:0;">
+        <input class="k-search-input" id="mp-search-input"
+               placeholder="Search markets…" oninput="mpOnSearch()" autocomplete="off">
+        <button class="k-search-clear" id="mp-search-clear"
+                onclick="mpClearSearch()" style="display:none">✕</button>
+      </div>
+
+      <!-- Filters -->
+      <div class="k-mkt-filters">
+        <div class="k-filter-label">Price</div>
+        <div class="k-range-wrap">
+          <div class="k-range-track">
+            <div class="k-range-fill" id="mp-price-fill"></div>
+            <input type="range" class="k-slider" id="mp-price-min" min="0" max="100" value="0"
+                   oninput="mpUpdatePriceRange()">
+            <input type="range" class="k-slider" id="mp-price-max" min="0" max="100" value="100"
+                   oninput="mpUpdatePriceRange()">
+          </div>
+        </div>
+        <div class="k-filter-value" id="mp-price-label">Any</div>
+        <div class="k-slider-divider"></div>
+        <div class="k-filter-label">Days</div>
+        <div class="k-range-wrap">
+          <div class="k-range-track">
+            <div class="k-range-fill" id="mp-days-fill"></div>
+            <input type="range" class="k-slider" id="mp-days-min" min="0" max="1500" value="0"
+                   oninput="mpUpdateDaysRange()">
+            <input type="range" class="k-slider" id="mp-days-max" min="0" max="1500" value="1500"
+                   oninput="mpUpdateDaysRange()">
+          </div>
+        </div>
+        <div class="k-filter-value" id="mp-days-label">Any</div>
+      </div>
+
+      <!-- Sort strip -->
+      <div class="k-sort-strip">
+        <div class="k-sort-label">Sort</div>
+        <button class="k-sort-btn active" id="mpsort-default"    onclick="mpSetSort('default')">Default</button>
+        <button class="k-sort-btn"        id="mpsort-price-asc"  onclick="mpSetSort('price-asc')">Price ↑</button>
+        <button class="k-sort-btn"        id="mpsort-price-desc" onclick="mpSetSort('price-desc')">Price ↓</button>
+        <button class="k-sort-btn"        id="mpsort-close-asc"  onclick="mpSetSort('close-asc')">Closing ↑</button>
+        <button class="k-sort-btn"        id="mpsort-close-desc" onclick="mpSetSort('close-desc')">Closing ↓</button>
+      </div>
+
+      <!-- Hidden sink for mpBuildCatColumn JS (sidebar removed, pills used instead) -->
+      <div id="mp-cat-list" style="display:none;"></div>
+
+      <!-- Series pane — full width, category selected via pills above -->
+      <div class="mp-browse-inner">
+        <div class="mp-series-pane">
+          <div class="k-col-header" id="mp-series-header">Series</div>
+          <div class="k-col-scroll" id="mp-series-list">
+            <div style="padding:12px;font-size:10px;color:#222">← Select a category above</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Market cards for browse -->
+      <div class="k-col-scroll" id="mp-market-body" style="flex:1;min-height:0;border-top:1px solid #1a1a1a;">
+        <div style="padding:16px;font-size:10px;color:#222">← Select a series</div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="k-pagination" style="flex-shrink:0;">
+        <button class="k-page-btn" id="mp-prev-btn" onclick="mpChangePage(-1)">← Prev</button>
+        <span class="k-page-info" id="mp-page-info">Page 1 of 1</span>
+        <button class="k-page-btn" id="mp-next-btn" onclick="mpChangePage(1)">Next →</button>
+      </div>
+    </div><!-- /col browse -->
+
+    <!-- ══ Col 2: Semantic Match ══════════════════════════════════════════ -->
+    <div class="mp-col">
+      <div class="mp-col-header">
+        <div class="mp-col-title">Semantic Match</div>
+        <div class="mp-col-meta" id="mp-corpus-lbl"></div>
+      </div>
+
+      <!-- Confidence + sort -->
+      <div class="mp-conf-row">
+        <div class="k-filter-label">Confidence</div>
+        <input type="range" class="k-slider" id="mp-conf-slider" min="1" max="99" value="15"
+               oninput="mpUpdateConf()"
+               style="position:relative;width:90px;pointer-events:all;">
+        <div class="k-filter-value" id="mp-conf-val">&ge; 0.15</div>
+        <div class="k-slider-divider"></div>
+        <div class="k-sort-label">Sort</div>
+        <button class="k-sort-btn active" id="mpmsort-conf"      onclick="mpSetMatchSort('conf')">Conf</button>
+        <button class="k-sort-btn"        id="mpmsort-prob-desc" onclick="mpSetMatchSort('prob-desc')">Prob ↓</button>
+        <button class="k-sort-btn"        id="mpmsort-prob-asc"  onclick="mpSetMatchSort('prob-asc')">Prob ↑</button>
+        <button class="k-sort-btn"        id="mpmsort-value"     onclick="mpSetMatchSort('value')"
+                title="Confidence × price uncertainty">Value</button>
+      </div>
+
+      <!-- Category filter pills -->
+      <div class="mp-cat-filter-row" id="mp-match-cat-row">
+        <span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#2a2a2a;">awaiting matches…</span>
+      </div>
+
+      <!-- Match results -->
+      <div class="k-col-scroll" id="mp-match-body" style="flex:1;">
+        <div style="padding:16px;font-size:10px;color:#222">Loading matches…</div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="k-pagination" style="flex-shrink:0;">
+        <button class="k-page-btn" id="mp-mprev-btn" onclick="mpMatchChangePage(-1)">← Prev</button>
+        <span class="k-page-info" id="mp-mpage-info">Page 1 of 1</span>
+        <button class="k-page-btn" id="mp-mnext-btn" onclick="mpMatchChangePage(1)">Next →</button>
+      </div>
+    </div><!-- /col match -->
+
+    <!-- ══ Col 3: Trading Strategy ════════════════════════════════════════ -->
+    <div class="mp-col">
+      <div class="mp-col-header">
+        <div class="mp-col-title">Trading Strategy</div>
+        <div class="mp-col-meta" id="strat-updated"></div>
+      </div>
+
+      <!-- Strategy sub-tabs -->
+      <div class="strat-tabs">
+        <div class="strat-tab active" id="strat-tab-expiry" onclick="stratSwitchTab('expiry')">
+          Near Expiry
+          <div class="strat-tab-tooltip">Markets closing within a few days with price between 25–75¢ — genuinely undecided outcomes with time pressure.</div>
+        </div>
+        <div class="strat-tab" id="strat-tab-extreme" onclick="stratSwitchTab('extreme')">
+          Extreme
+          <div class="strat-tab-tooltip">Markets closing very soon priced near 0¢ or 100¢ — near-certainty outcomes. Useful for asymmetric bets if a contradicting event fires.</div>
+        </div>
+        <div class="strat-tab" id="strat-tab-signal" onclick="stratSwitchTab('signal')">
+          Signal
+          <div class="strat-tab-tooltip">High semantic match score + undecided price (20–80¢). The news matches this market but the price hasn't moved yet — the opportunity window.</div>
+        </div>
+        <div class="strat-tab" id="strat-tab-tension" onclick="stratSwitchTab('tension')">
+          Tension
+          <div class="strat-tab-tooltip">High match score + closing within 7 days + price 30–70¢. Highest urgency: the event is live, the market expires soon, and the price is still open.</div>
+        </div>
+      </div>
+
+      <!-- Filter strip -->
+      <div class="strat-filter-strip">
+        <div class="strat-filter-group" id="strat-expiry-controls">
+          <span class="strat-filter-label">Within</span>
+          <button class="strat-day-btn active" data-days="3" onclick="stratSetDays(3,this)">3d</button>
+          <button class="strat-day-btn" data-days="7" onclick="stratSetDays(7,this)">7d</button>
+          <button class="strat-day-btn" data-days="14" onclick="stratSetDays(14,this)">14d</button>
+          <div class="strat-filter-divider"></div>
+          <span class="strat-filter-label">Price</span>
+          <button class="strat-range-btn active" data-min="25" data-max="75" onclick="stratSetRange(25,75,this)">25–75¢</button>
+          <button class="strat-range-btn" data-min="20" data-max="80" onclick="stratSetRange(20,80,this)">20–80¢</button>
+          <button class="strat-range-btn" data-min="10" data-max="90" onclick="stratSetRange(10,90,this)">10–90¢</button>
+        </div>
+        <div class="strat-filter-group" id="strat-extreme-controls" style="display:none">
+          <span class="strat-filter-label">Within</span>
+          <button class="strat-day-btn active" data-days="1" onclick="stratSetExtremeDays(1,this)">1d</button>
+          <button class="strat-day-btn" data-days="3" onclick="stratSetExtremeDays(3,this)">3d</button>
+          <button class="strat-day-btn" data-days="7" onclick="stratSetExtremeDays(7,this)">7d</button>
+          <div class="strat-filter-divider"></div>
+          <span class="strat-filter-label">Edge</span>
+          <button class="strat-range-btn active" data-thresh="10" onclick="stratSetExtremeThresh(10,this)">≤10¢/≥90¢</button>
+          <button class="strat-range-btn" data-thresh="15" onclick="stratSetExtremeThresh(15,this)">≤15¢/≥85¢</button>
+          <button class="strat-range-btn" data-thresh="20" onclick="stratSetExtremeThresh(20,this)">≤20¢/≥80¢</button>
+        </div>
+
+        <!-- Signal: Semantic Match + Undecided Price controls -->
+        <div class="strat-filter-group" id="strat-signal-controls" style="display:none">
+          <span class="strat-filter-label">Min score</span>
+          <button class="strat-range-btn active" data-score="0.3" onclick="stratSetSignalScore(0.3,this)">≥0.30</button>
+          <button class="strat-range-btn" data-score="0.4" onclick="stratSetSignalScore(0.4,this)">≥0.40</button>
+          <button class="strat-range-btn" data-score="0.5" onclick="stratSetSignalScore(0.5,this)">≥0.50</button>
+          <div class="strat-filter-divider"></div>
+          <span class="strat-filter-label">Price</span>
+          <button class="strat-range-btn active" data-min="20" data-max="80" onclick="stratSetSignalRange(20,80,this)">20–80¢</button>
+          <button class="strat-range-btn" data-min="30" data-max="70" onclick="stratSetSignalRange(30,70,this)">30–70¢</button>
+          <button class="strat-range-btn" data-min="10" data-max="90" onclick="stratSetSignalRange(10,90,this)">10–90¢</button>
+        </div>
+
+        <!-- Tension: Semantic Match + Near-Expiry Tension controls -->
+        <div class="strat-filter-group" id="strat-tension-controls" style="display:none">
+          <span class="strat-filter-label">Within</span>
+          <button class="strat-day-btn active" data-days="7" onclick="stratSetTensionDays(7,this)">7d</button>
+          <button class="strat-day-btn" data-days="14" onclick="stratSetTensionDays(14,this)">14d</button>
+          <button class="strat-day-btn" data-days="3" onclick="stratSetTensionDays(3,this)">3d</button>
+          <div class="strat-filter-divider"></div>
+          <span class="strat-filter-label">Min score</span>
+          <button class="strat-range-btn active" data-score="0.3" onclick="stratSetTensionScore(0.3,this)">≥0.30</button>
+          <button class="strat-range-btn" data-score="0.4" onclick="stratSetTensionScore(0.4,this)">≥0.40</button>
+          <button class="strat-range-btn" data-score="0.5" onclick="stratSetTensionScore(0.5,this)">≥0.50</button>
+          <div class="strat-filter-divider"></div>
+          <span class="strat-filter-label">Price</span>
+          <button class="strat-range-btn active" data-min="30" data-max="70" onclick="stratSetTensionRange(30,70,this)">30–70¢</button>
+          <button class="strat-range-btn" data-min="20" data-max="80" onclick="stratSetTensionRange(20,80,this)">20–80¢</button>
+        </div>
+      </div>
+
+      <!-- Category filter pills -->
+      <div class="mp-cat-filter-row" id="strat-cat-row" style="flex-shrink:0;">
+        <span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#2a2a2a;">loading…</span>
+      </div>
+
+      <!-- Results -->
+      <div class="k-col-scroll" id="strat-body" style="flex:1;min-height:0;"></div>
+
+      <!-- Footer -->
+      <div class="strat-footer">
+        <span class="strat-count" id="strat-count"></span>
+        <button class="strat-refresh-btn" onclick="stratRefresh()">↻ Refresh</button>
+      </div>
+    </div><!-- /col strategy -->
+
+  </div><!-- /mp-layout -->
+
+  <!-- Status bar -->
+  <div class="k-status-bar">
+    <span class="k-status-text" id="mp-status-bar-txt">—</span>
+    <span class="k-status-text" style="color:#1a1a1a;">Market Dashboard · Event Trading Terminal</span>
+  </div>
+
+</div><!-- /page -->
+<script>
+const KALSHI_API  = 'http://localhost:5001';
+const MP_PER_PAGE = 20;
+
+let mpAllSeries      = [];
+let mpSeriesMap      = {};
+let mpActiveCategory = '';
+let mpActiveSeries   = null;
+let mpCurrentPage    = 1;
+let mpSortMode       = 'default';
+let mpPriceMin = 0, mpPriceMax = 100, mpDaysMin = 0, mpDaysMax = 1500;
+let mpSearchQuery    = '';
+let mpSearchDebounce = null;
+let mpMatchAll       = [];
+let mpMatchPage      = 1;
+let mpMatchSortMode  = 'conf';
+let mpConfThreshold  = 0.15;
+let mpExcludedCats   = new Set();
+
+function kRenderMarket(m, showScore) {
+  let yesCents;
+  if (m.yes_ask_dollars != null)         yesCents = Math.round(parseFloat(m.yes_ask_dollars) * 100);
+  else if (m.yes_ask != null)            yesCents = m.yes_ask;
+  else if (m.last_price_dollars != null) yesCents = Math.round(parseFloat(m.last_price_dollars) * 100);
+  else if (m.last_price != null)         yesCents = m.last_price;
+  else                                    yesCents = 0;
+
+  let noCents;
+  if (m.no_ask_dollars != null)  noCents = Math.round(parseFloat(m.no_ask_dollars) * 100);
+  else if (m.no_ask != null)     noCents = m.no_ask;
+  else                            noCents = Math.max(0, 100 - yesCents);
+
+  const daysLeft = m.days_left != null ? m.days_left : '?';
+  const vol      = m.volume    != null ? Number(m.volume).toLocaleString() : '—';
+
+  // Build deep event-level Kalshi URL:
+  // https://kalshi.com/markets/{series_slug}/{series-title-slug}/{event_ticker_lower}
+  // e.g. https://kalshi.com/markets/kxwrecss/world-recessions/wrecss-26
+  let seriesSlug = (m.series_ticker || '').toLowerCase();
+  if (!seriesSlug && m.ticker) {
+    seriesSlug = m.ticker.toLowerCase().replace(/-\d{2}[a-z]{3}\d{2}.*$/i, '');
+  }
+  // Look up series title from kAllSeries / kMatchSeriesMap for the slug
+  const seriesData = (typeof kMatchSeriesMap !== 'undefined' && kMatchSeriesMap[m.series_ticker || ''])
+    || (typeof kAllSeries !== 'undefined' && kAllSeries.find(s => s.ticker === m.series_ticker));
+  const seriesTitleSlug = seriesData && seriesData.title
+    ? seriesData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    : seriesSlug.replace(/^kx/, '');
+  // event_ticker e.g. "WRECSS-26" → "wrecss-26"
+  const eventTicker = (m.event_ticker || '').toLowerCase();
+  // If we have an event ticker, build deep link; otherwise fall back to series page
+  let url;
+  if (seriesSlug && seriesTitleSlug && eventTicker) {
+    url = `https://kalshi.com/markets/${seriesSlug}/${seriesTitleSlug}/${eventTicker}`;
+  } else if (seriesSlug) {
+    url = `https://kalshi.com/markets/${seriesSlug}`;
+  } else {
+    url = `https://kalshi.com/markets/${(m.ticker||'').toLowerCase()}`;
+  }
+
+  const score = m._score || 0;
+
+  // Show event ticker as a tag so the user knows which event this market is in
+  const eventTag = eventTicker
+    ? `<span class="k-meta-tag" style="color:#6af;font-family:monospace">${(m.event_ticker||'').toUpperCase()}</span>`
+    : '';
+
+  // Urgency badge: highlight markets closing very soon
+  let urgencyBadge = '';
+  if (daysLeft !== '?') {
+    const d = parseFloat(daysLeft);
+    if (d <= 1)      urgencyBadge = `<span class="k-meta-tag k-urgency-critical" title="Closes within 24h">🔴 &lt;24h</span>`;
+    else if (d <= 3) urgencyBadge = `<span class="k-meta-tag k-urgency-soon" title="Closes within 3 days">⚠ ${d.toFixed(0)}d</span>`;
+  }
+
+  const metaTags = [
+    m.category ? `<span class="k-meta-tag">${m.category}</span>` : '',
+    eventTag,
+    urgencyBadge || `<span class="k-meta-tag">${daysLeft}d</span>`,
+    `<span class="k-meta-tag">vol ${vol}</span>`,
+    showScore ? `<div class="k-score-bar"><div class="k-score-fill" style="width:${Math.round(score*100)}%"></div></div>` : '',
+    `<a class="k-market-link" href="${url}" target="_blank">↗ kalshi</a>`,
+    showScore ? `<a class="k-market-link k-why-link" href="/match_detail?ticker=${encodeURIComponent(m.ticker)}" target="_blank">⊙ why matched</a>` : '',
+  ].join('');
+
+  // In match tab: add "Show all in event" expander
+  const siblingExpander = showScore && eventTicker
+    ? `<span class="k-sibling-link" onclick="kExpandEventSiblings(this,'${m.event_ticker}','${m.series_ticker}')" style="cursor:pointer;font-size:10px;color:#4a8fff;margin-left:8px;text-decoration:underline;text-underline-offset:2px">show all in event ↓</span>`
+    : '';
+
+  return `<div class="k-market" data-event="${m.event_ticker || ''}">
+    <div class="k-market-top">
+      ${showScore ? `<div class="k-market-prob k-match-conf"><span class="k-conf-num">${score.toFixed(2)}</span><span class="k-conf-label">match</span></div>` : `<div class="k-market-prob">${yesCents}%</div>`}
+      <div class="k-market-title">${m.title || m.ticker}</div>
+      <div class="k-market-prices">
+        <div class="k-price-col">
+          <div class="k-price-col-label">Yes</div>
+          <div class="k-price-box yes">${yesCents}¢</div>
+        </div>
+        <div class="k-price-col">
+          <div class="k-price-col-label">No</div>
+          <div class="k-price-box no">${noCents}¢</div>
+        </div>
+      </div>
+    </div>
+    ${m.subtitle ? `<div style="font-size:11px;color:#555;padding-left:40px;line-height:1.4;margin-top:2px">${m.subtitle}</div>` : ''}
+    <div class="k-market-meta" style="padding-left:40px">${metaTags}${siblingExpander}</div>
+  </div>`;
+}
+
+// ── Status bar ─────────────────────────────────────────────────────────────────
+
+async function kExpandEventSiblings(linkEl, eventTicker, seriesTicker) {
+  if (!eventTicker) return;
+  const card = linkEl.closest('.k-market');
+  if (!card) return;
+
+  // If already expanded, collapse
+  const existing = card.nextElementSibling;
+  if (existing && existing.classList.contains('k-event-siblings')) {
+    existing.remove();
+    linkEl.textContent = 'show all in event ↓';
+    return;
+  }
+
+  linkEl.textContent = 'loading…';
+  try {
+    const params = new URLSearchParams({ event_ticker: eventTicker, per_page: 50, page: 1, min_price: 0, max_price: 100 });
+    const r = await fetch(`/api/kalshi/markets?${params}`);
+    const d = await r.json();
+    const siblings = (d.markets || []).filter(m => m.event_ticker === eventTicker);
+
+    if (siblings.length <= 1) {
+      linkEl.textContent = 'only 1 market in event';
+      return;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'k-event-siblings';
+    container.style.cssText = 'border-left:2px solid #1a3a6a;margin:2px 0 2px 12px;padding:0 0 0 8px;';
+
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:9px;color:#4a8fff;padding:6px 8px 4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase';
+    hdr.textContent = `${eventTicker} · ${siblings.length} markets`;
+    container.appendChild(hdr);
+
+    for (const m of siblings) {
+      container.insertAdjacentHTML('beforeend', kRenderMarket(m, false));
+    }
+    card.after(container);
+    linkEl.textContent = 'collapse ↑';
+  } catch(e) {
+    linkEl.textContent = 'error loading';
+  }
+}
+
+
+// ── Render a market card ───────────────────────────────────────────────────────
+
+// ── Series loading ──────────────────────────────────────────────────────────
+let _mpRetry = 0;
+async function mpLoadSeries() {
+  try {
+    const resp = await fetch(KALSHI_API + '/api/kalshi/series');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const active = new Set(data.active_tickers || []);
+    const filtered = (data.series || []).filter(s => active.has(s.ticker));
+
+    // Detect synthesized fallback: if every series has blank/Other category,
+    // the server-side series cache isn't ready yet — retry in a few seconds
+    const hasRealCategories = filtered.some(s => s.category && s.category !== '' && s.category !== 'Other');
+    if (!hasRealCategories && filtered.length > 0) {
+      // Server returned stale/synthesized data — wait for real series cache
+      setTimeout(mpLoadSeries, 4000);
+      return;
+    }
+
+    mpAllSeries = filtered;
+    mpAllSeries.forEach(s => { mpSeriesMap[s.ticker] = s; });
+    _mpRetry = 0; // reset so future overlay calls can retry cleanly
+    mpBuildCatColumn();
+    mpUpdateStatus();
+  } catch(e) {
+    if (++_mpRetry < 10) setTimeout(mpLoadSeries, 6000);
+  }
+}
+
+function mpBuildCatColumn() {
+  const counts = {};
+  for (const s of mpAllSeries) counts[s.category || 'Other'] = (counts[s.category || 'Other'] || 0) + 1;
+  const list = document.getElementById('mp-cat-list');
+  list.innerHTML = '';
+  for (const cat of Object.keys(counts).sort()) {
+    const el = document.createElement('div');
+    el.className = 'k-cat-row' + (mpActiveCategory === cat ? ' active' : '');
+    el.dataset.cat = cat;
+    el.innerHTML = `<span>${cat}</span><span class="k-cat-count">${counts[cat]}</span>`;
+    el.onclick = () => mpSelectCat(cat, el);
+    list.appendChild(el);
+  }
+  // Also build the pill-style filter row at the top of the Browse column
+  mpBuildBrowseCatPills();
+}
+
+function mpBuildBrowseCatPills() {
+  const row = document.getElementById('mp-browse-cat-row');
+  if (!row) return;
+  const counts = {};
+  for (const s of mpAllSeries) counts[s.category || 'Other'] = (counts[s.category || 'Other'] || 0) + 1;
+  const cats = Object.keys(counts).sort();
+
+  row.innerHTML = '<span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444;flex-shrink:0;">Category</span>';
+
+  // "All" pill
+  const allBtn = document.createElement('button');
+  const isAll = !mpActiveCategory;
+  allBtn.style.cssText = `font-size:9px;font-weight:600;padding:2px 8px;cursor:pointer;border-radius:2px;
+    border:1px solid ${isAll?'#2a4a99':'#222'};background:${isAll?'rgba(20,40,120,0.18)':'transparent'};
+    color:${isAll?'#4477dd':'#444'};transition:all 0.15s;`;
+  allBtn.textContent = 'All';
+  allBtn.onclick = () => {
+    mpActiveCategory = '';
+    mpActiveSeries = null;
+    mpCurrentPage = 1;
+    document.querySelectorAll('#mp-cat-list .k-cat-row').forEach(r => r.classList.remove('active'));
+    document.getElementById('mp-series-header').textContent = 'All Series';
+    document.getElementById('mp-series-header-lbl').textContent = 'All categories';
+    // Populate series list with all series sorted alphabetically
+    const col = document.getElementById('mp-series-list');
+    col.innerHTML = '';
+    const allSorted = [...mpAllSeries].sort((a,b) => (a.title||a.ticker).localeCompare(b.title||b.ticker));
+    for (const s of allSorted) {
+      const row = document.createElement('div');
+      row.className = 'k-series-row';
+      row.dataset.ticker = s.ticker;
+      row.innerHTML = `<div class="k-series-title">${s.title || s.ticker}</div>
+        <div class="k-series-meta">${s.ticker} <span class="k-meta-tag">${s.category||''}</span></div>`;
+      row.onclick = () => mpSelectSeries(s.ticker, row);
+      col.appendChild(row);
+    }
+    document.getElementById('mp-market-body').innerHTML =
+      '<div style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
+    mpBuildBrowseCatPills();
+  };
+  row.appendChild(allBtn);
+
+  for (const cat of cats) {
+    const active = mpActiveCategory === cat;
+    const btn = document.createElement('button');
+    btn.style.cssText = `font-size:9px;font-weight:600;padding:2px 8px;cursor:pointer;border-radius:2px;
+      border:1px solid ${active?'#2a4a99':'#222'};background:${active?'rgba(20,40,120,0.18)':'transparent'};
+      color:${active?'#4477dd':'#444'};transition:all 0.15s;`;
+    btn.textContent = `${cat} (${counts[cat]})`;
+    btn.onclick = () => {
+      // Find and click the matching row in the sidebar cat list
+      const catRow = document.querySelector(`#mp-cat-list [data-cat="${cat}"]`);
+      if (catRow) catRow.click();
+      else mpSelectCat(cat, null);
+      mpBuildBrowseCatPills();
+    };
+    row.appendChild(btn);
+  }
+}
+
+function mpSelectCat(cat, el) {
+  mpActiveCategory = cat;
+  mpActiveSeries   = null;
+  mpCurrentPage    = 1;
+  document.querySelectorAll('#mp-cat-list .k-cat-row').forEach(r => r.classList.remove('active'));
+  if (el) el.classList.add('active');
+  else {
+    const catRow = document.querySelector(`#mp-cat-list [data-cat="${cat}"]`);
+    if (catRow) catRow.classList.add('active');
+  }
+  document.getElementById('mp-series-header').textContent      = cat;
+  document.getElementById('mp-series-header-lbl').textContent  = cat;
+  mpBuildBrowseCatPills();
+  const series = mpAllSeries.filter(s => (s.category || 'Other') === cat)
+    .sort((a,b) => (a.title||a.ticker).localeCompare(b.title||b.ticker));
+  const col = document.getElementById('mp-series-list');
+  col.innerHTML = '';
+  for (const s of series) {
+    const row = document.createElement('div');
+    row.className = 'k-series-row';
+    row.dataset.ticker = s.ticker;
+    row.innerHTML = `<div class="k-series-title">${s.title || s.ticker}</div>
+      <div class="k-series-meta">${s.ticker}</div>`;
+    row.onclick = () => mpSelectSeries(s.ticker, row);
+    col.appendChild(row);
+  }
+  document.getElementById('mp-market-body').innerHTML =
+    '<div style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
+}
+
+async function mpSelectSeries(ticker, el) {
+  mpActiveSeries = ticker;
+  mpCurrentPage  = 1;
+  document.querySelectorAll('#mp-series-list .k-series-row').forEach(r => r.classList.remove('active'));
+  if (el) el.classList.add('active');
+  mpFetchBrowseMarkets();
+}
+
+// ── Browse: fetch + render ──────────────────────────────────────────────────
+async function mpFetchBrowseMarkets() {
+  if (!mpActiveSeries) return;
+  const body = document.getElementById('mp-market-body');
+  body.innerHTML = '<div style="padding:12px;font-size:10px;color:#222">Loading…</div>';
+  const params = new URLSearchParams({
+    series_ticker: mpActiveSeries,
+    min_price: mpPriceMin, max_price: mpPriceMax,
+    sort: mpSortMode, page: mpCurrentPage, per_page: MP_PER_PAGE
+  });
+  // Only send days params when user has actually filtered (not at defaults)
+  if (mpDaysMin > 0)    params.set('min_days', mpDaysMin);
+  if (mpDaysMax < 1500) params.set('max_days', mpDaysMax);
+  if (mpSearchQuery) params.set('q', mpSearchQuery);
+  try {
+    const resp = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data  = await resp.json();
+    const mks   = data.markets || [];
+    const pages = Math.max(1, Math.ceil((data.total || 0) / MP_PER_PAGE));
+    body.innerHTML = '';
+    if (!mks.length) {
+      body.innerHTML = '<div style="padding:16px;font-size:10px;color:#222">No markets found.</div>';
+    } else {
+      mks.forEach(m => body.insertAdjacentHTML('beforeend', kRenderMarket(m, false)));
+    }
+    body._pages = pages;
+    document.getElementById('mp-page-info').textContent = `Page ${mpCurrentPage} of ${pages}`;
+    document.getElementById('mp-prev-btn').disabled = mpCurrentPage <= 1;
+    document.getElementById('mp-next-btn').disabled = mpCurrentPage >= pages;
+  } catch(e) {
+    body.innerHTML = `<div style="padding:12px;font-size:10px;color:#555">Error: ${e.message}</div>`;
+  }
+}
+
+function mpChangePage(dir) {
+  const pages = document.getElementById('mp-market-body')._pages || 1;
+  mpCurrentPage = Math.max(1, Math.min(pages, mpCurrentPage + dir));
+  mpFetchBrowseMarkets();
+}
+
+// ── Browse: filters ─────────────────────────────────────────────────────────
+function mpUpdatePriceRange() {
+  const mn = +document.getElementById('mp-price-min').value;
+  const mx = +document.getElementById('mp-price-max').value;
+  mpPriceMin = Math.min(mn,mx); mpPriceMax = Math.max(mn,mx);
+  const f = document.getElementById('mp-price-fill');
+  f.style.left  = (mpPriceMin) + '%';
+  f.style.width = (mpPriceMax - mpPriceMin) + '%';
+  document.getElementById('mp-price-label').textContent =
+    (mpPriceMin===0 && mpPriceMax===100) ? 'Any' : `${mpPriceMin}¢–${mpPriceMax}¢`;
+  if (mpActiveSeries) { mpCurrentPage=1; mpFetchBrowseMarkets(); }
+}
+
+function mpUpdateDaysRange() {
+  const mn = +document.getElementById('mp-days-min').value;
+  const mx = +document.getElementById('mp-days-max').value;
+  mpDaysMin = Math.min(mn,mx); mpDaysMax = Math.max(mn,mx);
+  const f = document.getElementById('mp-days-fill');
+  f.style.left  = (mpDaysMin/1500*100) + '%';
+  f.style.width = ((mpDaysMax-mpDaysMin)/1500*100) + '%';
+  document.getElementById('mp-days-label').textContent =
+    (mpDaysMin===0 && mpDaysMax===1500) ? 'Any' : `${mpDaysMin}–${mpDaysMax}d`;
+  if (mpActiveSeries) { mpCurrentPage=1; mpFetchBrowseMarkets(); }
+}
+
+function mpSetSort(mode) {
+  mpSortMode = mode;
+  document.querySelectorAll('#mp-market-body ~ .k-sort-strip .k-sort-btn, .k-sort-strip .k-sort-btn[id^="mpsort"]').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('mpsort-' + mode);
+  if (btn) btn.classList.add('active');
+  mpCurrentPage = 1;
+  if (mpActiveSeries) mpFetchBrowseMarkets();
+}
+
+function mpOnSearch() {
+  mpSearchQuery = document.getElementById('mp-search-input').value.trim();
+  document.getElementById('mp-search-clear').style.display = mpSearchQuery ? '' : 'none';
+  clearTimeout(mpSearchDebounce);
+  mpSearchDebounce = setTimeout(() => { mpCurrentPage=1; if(mpActiveSeries) mpFetchBrowseMarkets(); }, 300);
+}
+
+function mpClearSearch() {
+  mpSearchQuery = '';
+  document.getElementById('mp-search-input').value = '';
+  document.getElementById('mp-search-clear').style.display = 'none';
+  mpCurrentPage = 1;
+  if (mpActiveSeries) mpFetchBrowseMarkets();
+}
+
+// ── Semantic Match ──────────────────────────────────────────────────────────
+function mpGetCat(m) {
+  const s = mpSeriesMap[m.series_ticker || ''];
+  return (s && s.category) || m.category || 'Other';
+}
+
+function mpUpdateConf() {
+  mpConfThreshold = +document.getElementById('mp-conf-slider').value / 100;
+  document.getElementById('mp-conf-val').textContent = '≥ ' + mpConfThreshold.toFixed(2);
+  mpMatchPage = 1;
+  mpFetchMatch();
+}
+
+async function mpFetchMatch() {
+  try {
+    const params = new URLSearchParams({ threshold: mpConfThreshold, page: 1, per_page: 500 });
+    const resp = await fetch(KALSHI_API + '/api/kalshi/match?' + params);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    mpMatchAll = data.markets || [];
+    const lbl = document.getElementById('mp-corpus-lbl');
+    if (lbl && data.corpus) lbl.textContent = data.corpus;
+    mpBuildMatchCatRow();
+    mpRenderMatchMarkets();
+    // Auto-update signal/tension tabs since they draw from mpMatchAll
+    if (stratActiveTab === 'signal' || stratActiveTab === 'tension') stratRun();
+  } catch(e) {}
+}
+
+function mpBuildMatchCatRow() {
+  const counts = {};
+  mpMatchAll.forEach(m => { const c = mpGetCat(m); counts[c] = (counts[c]||0)+1; });
+  const row = document.getElementById('mp-match-cat-row');
+  row.innerHTML = '<span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444;flex-shrink:0;">Filter</span>';
+  for (const cat of Object.keys(counts).sort()) {
+    const ex = mpExcludedCats.has(cat);
+    const btn = document.createElement('button');
+    btn.style.cssText = `font-size:9px;font-weight:600;padding:2px 8px;cursor:pointer;border-radius:2px;
+      border:1px solid ${ex?'#222':'#2a4a99'};background:${ex?'transparent':'rgba(20,40,120,0.18)'};
+      color:${ex?'#333':'#4477dd'};text-decoration:${ex?'line-through':'none'};transition:all 0.15s;`;
+    btn.textContent = `${cat} (${counts[cat]})`;
+    btn.onclick = () => {
+      if (mpExcludedCats.has(cat)) mpExcludedCats.delete(cat); else mpExcludedCats.add(cat);
+      mpMatchPage=1; mpBuildMatchCatRow(); mpRenderMatchMarkets();
+    };
+    row.appendChild(btn);
+  }
+  if (mpExcludedCats.size > 0) {
+    const r = document.createElement('button');
+    r.style.cssText = 'font-size:9px;color:#555;background:none;border:none;cursor:pointer;padding:2px 6px;';
+    r.textContent = 'reset';
+    r.onclick = () => { mpExcludedCats.clear(); mpBuildMatchCatRow(); mpRenderMatchMarkets(); };
+    row.appendChild(r);
+  }
+}
+
+function mpDeduplicateByEvent(markets) {
+  // Group by event_ticker. Keep the highest-scoring market per event as the representative.
+  // Attach siblings as ._siblings array for inline expansion.
+  const eventGroups = new Map();
+  const noEvent = []; // markets with no event_ticker — keep as-is
+  for (const m of markets) {
+    const et = m.event_ticker || '';
+    if (!et) { noEvent.push(m); continue; }
+    if (!eventGroups.has(et)) eventGroups.set(et, []);
+    eventGroups.get(et).push(m);
+  }
+  const deduped = [];
+  for (const [et, group] of eventGroups) {
+    // Sort group by score desc, keep best as representative
+    group.sort((a,b) => (b._score||0) - (a._score||0));
+    const rep = { ...group[0] };
+    rep._siblings = group.slice(1);
+    rep._eventCount = group.length;
+    deduped.push(rep);
+  }
+  // Merge no-event markets back, maintain sort order by score
+  return [...deduped, ...noEvent].sort((a,b) => (b._score||0) - (a._score||0));
+}
+
+function mpRenderMatchMarkets() {
+  const body   = document.getElementById('mp-match-body');
+  let sorted = [...mpMatchAll.filter(m => !mpExcludedCats.has(mpGetCat(m)))];
+  if      (mpMatchSortMode === 'prob-desc') sorted.sort((a,b)=>(b.yes_ask??b.last_price??0)-(a.yes_ask??a.last_price??0));
+  else if (mpMatchSortMode === 'prob-asc')  sorted.sort((a,b)=>(a.yes_ask??a.last_price??0)-(b.yes_ask??b.last_price??0));
+  else if (mpMatchSortMode === 'value')     sorted.sort((a,b)=>{
+    const ua=1-Math.abs((a.yes_ask??50)-50)/50, ub=1-Math.abs((b.yes_ask??50)-50)/50;
+    return (b._score*ub)-(a._score*ua);
+  });
+  // Deduplicate by event — group same-event markets under one card
+  sorted = mpDeduplicateByEvent(sorted);
+  const pages = Math.max(1, Math.ceil(sorted.length / MP_PER_PAGE));
+  mpMatchPage  = Math.min(mpMatchPage, pages);
+  const slice  = sorted.slice((mpMatchPage-1)*MP_PER_PAGE, mpMatchPage*MP_PER_PAGE);
+  body.innerHTML = '';
+  if (!slice.length) {
+    body.innerHTML = '<div style="padding:16px;font-size:10px;color:#222">No matches. Try lowering the confidence threshold.</div>';
+  } else {
+    slice.forEach(m => {
+      body.insertAdjacentHTML('beforeend', kRenderMarket(m, true));
+      // If event has siblings, add a collapsed expander after the card
+      if (m._siblings && m._siblings.length > 0) {
+        const expander = document.createElement('div');
+        expander.style.cssText = 'border-left:2px solid #1a3a1a;margin:0 0 2px 12px;';
+        const hdr = document.createElement('div');
+        hdr.style.cssText = 'padding:4px 10px;font-size:9px;color:#2a5a2a;cursor:pointer;' +
+          'letter-spacing:0.04em;border-bottom:1px solid #111;background:#0c0c0c;' +
+          'display:flex;align-items:center;gap:6px;';
+        hdr.innerHTML = `<span style="color:#4477dd;font-weight:700">${m.event_ticker}</span>` +
+          `<span style="color:#2a4a22">+ ${m._siblings.length} more outcome${m._siblings.length>1?'s':''} in this event</span>` +
+          `<span style="margin-left:auto;color:#2a5a2a">↓ expand</span>`;
+        hdr.onclick = function() {
+          const isOpen = expander.dataset.open === '1';
+          if (isOpen) {
+            // Collapse
+            Array.from(expander.querySelectorAll('.k-market')).forEach(el => el.remove());
+            hdr.querySelector('span:last-child').textContent = '↓ expand';
+            expander.dataset.open = '0';
+          } else {
+            // Expand siblings inline
+            m._siblings.forEach(sib => expander.insertAdjacentHTML('beforeend', kRenderMarket(sib, true)));
+            hdr.querySelector('span:last-child').textContent = '↑ collapse';
+            expander.dataset.open = '1';
+          }
+        };
+        expander.appendChild(hdr);
+        expander.dataset.open = '0';
+        body.appendChild(expander);
+      }
+    });
+  }
+  document.getElementById('mp-mpage-info').textContent = `Page ${mpMatchPage} of ${pages}`;
+  document.getElementById('mp-mprev-btn').disabled = mpMatchPage <= 1;
+  document.getElementById('mp-mnext-btn').disabled = mpMatchPage >= pages;
+  body._sorted = sorted;
+}
+
+function mpMatchChangePage(dir) {
+  const sorted = document.getElementById('mp-match-body')._sorted || [];
+  const pages  = Math.max(1, Math.ceil(sorted.length / MP_PER_PAGE));
+  mpMatchPage  = Math.max(1, Math.min(pages, mpMatchPage + dir));
+  mpRenderMatchMarkets();
+}
+
+function mpSetMatchSort(mode) {
+  mpMatchSortMode = mode;
+  document.querySelectorAll('[id^="mpmsort-"]').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('mpmsort-' + mode);
+  if (btn) btn.classList.add('active');
+  mpMatchPage = 1;
+  mpRenderMatchMarkets();
+}
+
+// ── Status & refresh ─────────────────────────────────────────────────────────
+function mpAgo(iso) {
+  if (!iso) return '?';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60)   return Math.round(s) + 's ago';
+  if (s < 3600) return Math.round(s/60) + 'm ago';
+  return Math.round(s/3600) + 'h ago';
+}
+
+async function mpUpdateStatus() {
+  try {
+    const d = await (await fetch(KALSHI_API + '/api/kalshi/status')).json();
+    const t = `Data from ${mpAgo(d.last_updated)} · ${(d.count||0).toLocaleString()} total`;
+    document.getElementById('mp-status-txt').textContent       = t;
+    document.getElementById('mp-status-bar-txt').textContent   = t;
+  } catch(e) {}
+}
+
+async function mpRefresh() {
+  try {
+    await fetch(KALSHI_API + '/api/kalshi/refresh', {method:'POST'});
+    setTimeout(mpUpdateStatus, 3000);
+  } catch(e) {}
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STRATEGY PANEL — Near Expiry + Extreme
+// ══════════════════════════════════════════════════════════════════════════════
+
+let stratActiveTab      = 'expiry';
+let stratExpiryDays     = 3;
+let stratExpiryMin      = 25;
+let stratExpiryMax      = 75;
+let stratExtremeDays    = 1;
+let stratExtremeThresh  = 10;
+let stratSignalScore    = 0.3;
+let stratSignalMin      = 20;
+let stratSignalMax      = 80;
+let stratTensionDays    = 7;
+let stratTensionScore   = 0.3;
+let stratTensionMin     = 30;
+let stratTensionMax     = 70;
+let stratExcludedCats   = new Set();
+let stratLastMarkets    = [];
+
+function stratSwitchTab(tab) {
+  stratActiveTab = tab;
+  stratExcludedCats.clear();
+  ['expiry','extreme','signal','tension'].forEach(t => {
+    document.getElementById('strat-tab-' + t).classList.toggle('active', t === tab);
+    const ctrl = document.getElementById('strat-' + t + '-controls');
+    if (ctrl) ctrl.style.display = t === tab ? 'flex' : 'none';
+  });
+  stratRun();
+}
+
+function stratSetDays(days, btn) {
+  stratExpiryDays = days;
+  document.querySelectorAll('#strat-expiry-controls .strat-day-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  stratRun();
+}
+
+function stratSetRange(min, max, btn) {
+  stratExpiryMin = min; stratExpiryMax = max;
+  document.querySelectorAll('#strat-expiry-controls .strat-range-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  stratRun();
+}
+
+function stratSetExtremeDays(days, btn) {
+  stratExtremeDays = days;
+  document.querySelectorAll('#strat-extreme-controls .strat-day-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  stratRun();
+}
+
+function stratSetExtremeThresh(thresh, btn) {
+  stratExtremeThresh = thresh;
+  document.querySelectorAll('#strat-extreme-controls .strat-range-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  stratRun();
+}
+
+function stratRefresh() { stratRun(); }
+
+async function stratRun() {
+  const body = document.getElementById('strat-body');
+  if (!body) return;
+  body.innerHTML = '<div class="strat-loading">Loading…</div>';
+
+  try {
+    let markets;
+    if      (stratActiveTab === 'expiry')  markets = await stratFetchExpiry();
+    else if (stratActiveTab === 'extreme') markets = await stratFetchExtreme();
+    else if (stratActiveTab === 'signal')  markets = stratFilterSignal();
+    else if (stratActiveTab === 'tension') markets = stratFilterTension();
+    stratRender(markets);
+  } catch(e) {
+    body.innerHTML = `<div class="strat-empty">Error loading data.<br>${e.message}</div>`;
+  }
+}
+
+async function stratFetchExpiry() {
+  // Near-expiry undecided: closing within N days, price in [min, max]
+  const params = new URLSearchParams({
+    min_price: stratExpiryMin,
+    max_price: stratExpiryMax,
+    max_days:  stratExpiryDays,
+    per_page:  200,
+    page:      1,
+  });
+  const resp = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const data = await resp.json();
+  // Sort by days_left ascending (most urgent first)
+  return (data.markets || []).sort((a, b) => (a.days_left ?? 999) - (b.days_left ?? 999));
+}
+
+async function stratFetchExtreme() {
+  // Near-expiry extreme: closing within N days, price <= thresh OR >= (100-thresh)
+  // Fetch low-price markets
+  const [loResp, hiResp] = await Promise.all([
+    fetch(KALSHI_API + '/api/kalshi/markets?' + new URLSearchParams({
+      min_price: 0, max_price: stratExtremeThresh,
+      max_days: stratExtremeDays, per_page: 200, page: 1
+    })),
+    fetch(KALSHI_API + '/api/kalshi/markets?' + new URLSearchParams({
+      min_price: 100 - stratExtremeThresh, max_price: 100,
+      max_days: stratExtremeDays, per_page: 200, page: 1
+    })),
+  ]);
+  if (!loResp.ok || !hiResp.ok) throw new Error('HTTP error');
+  const [loData, hiData] = await Promise.all([loResp.json(), hiResp.json()]);
+
+  // Merge, deduplicate by ticker, sort by absolute distance from 50¢ (most extreme first)
+  const seen = new Set();
+  const all = [...(loData.markets || []), ...(hiData.markets || [])].filter(m => {
+    if (seen.has(m.ticker)) return false;
+    seen.add(m.ticker);
+    return true;
+  });
+  return all.sort((a, b) => {
+    const priceA = stratGetPrice(a);
+    const priceB = stratGetPrice(b);
+    return Math.abs(priceB - 50) - Math.abs(priceA - 50);
+  });
+}
+
+function stratGetPrice(m) {
+  if (m.yes_ask != null)         return parseFloat(m.yes_ask);
+  if (m.yes_ask_dollars != null) return Math.round(parseFloat(m.yes_ask_dollars) * 100);
+  if (m.last_price != null)      return parseFloat(m.last_price);
+  if (m.last_price_dollars != null) return Math.round(parseFloat(m.last_price_dollars) * 100);
+  return 50;
+}
+
+function stratBuildCatPills(markets) {
+  const row = document.getElementById('strat-cat-row');
+  if (!row) return;
+  const counts = {};
+  markets.forEach(m => {
+    const cat = mpGetCat(m);
+    counts[cat] = (counts[cat] || 0) + 1;
+  });
+  const cats = Object.keys(counts).sort();
+  if (!cats.length) {
+    row.innerHTML = '';
+    return;
+  }
+  row.innerHTML = '<span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444;flex-shrink:0;">Filter</span>';
+  for (const cat of cats) {
+    const ex = stratExcludedCats.has(cat);
+    const btn = document.createElement('button');
+    btn.style.cssText = `font-size:9px;font-weight:600;padding:2px 8px;cursor:pointer;border-radius:2px;
+      border:1px solid ${ex?'#222':'#2a4a99'};background:${ex?'transparent':'rgba(20,40,120,0.18)'};
+      color:${ex?'#333':'#4477dd'};text-decoration:${ex?'line-through':'none'};transition:all 0.15s;`;
+    btn.textContent = `${cat} (${counts[cat]})`;
+    btn.onclick = () => {
+      if (stratExcludedCats.has(cat)) stratExcludedCats.delete(cat); else stratExcludedCats.add(cat);
+      stratBuildCatPills(stratLastMarkets);
+      stratRenderFiltered();
+    };
+    row.appendChild(btn);
+  }
+  if (stratExcludedCats.size > 0) {
+    const r = document.createElement('button');
+    r.style.cssText = 'font-size:9px;color:#555;background:none;border:none;cursor:pointer;padding:2px 6px;';
+    r.textContent = 'reset';
+    r.onclick = () => { stratExcludedCats.clear(); stratBuildCatPills(stratLastMarkets); stratRenderFiltered(); };
+    row.appendChild(r);
+  }
+}
+
+function stratRenderFiltered() {
+  const filtered = stratLastMarkets.filter(m => !stratExcludedCats.has(mpGetCat(m)));
+  stratRenderToDOM(filtered);
+}
+
+function stratRender(markets) {
+  stratLastMarkets = markets;
+  // Reset excluded cats when new data loads (tab switch / refresh)
+  stratExcludedCats.clear();
+  stratBuildCatPills(markets);
+  stratRenderFiltered();
+}
+
+function stratRenderToDOM(markets) {
+  const body  = document.getElementById('strat-body');
+  const count = document.getElementById('strat-count');
+  if (!markets.length) {
+    body.innerHTML = `<div class="strat-empty">
+      No markets found for these filters.<br>
+      Try widening the price range, extending the days window, or resetting the category filter.
+    </div>`;
+    if (count) count.textContent = '0 markets';
+    return;
+  }
+
+  if (count) count.textContent = markets.length.toLocaleString() + ' markets';
+
+  // Update timestamp
+  const upd = document.getElementById('strat-updated');
+  if (upd) upd.textContent = 'updated ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+
+  body.innerHTML = '';
+  markets.slice(0, 100).forEach(m => {
+    body.insertAdjacentHTML('beforeend', stratRenderCard(m));
+  });
+}
+
+// ── Signal + Tension filter setters ─────────────────────────────────────────
+function stratSetSignalScore(v,btn) {
+  stratSignalScore = v;
+  document.querySelectorAll('#strat-signal-controls [data-score]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); stratRun();
+}
+function stratSetSignalRange(min,max,btn) {
+  stratSignalMin = min; stratSignalMax = max;
+  document.querySelectorAll('#strat-signal-controls [data-min]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); stratRun();
+}
+function stratSetTensionDays(d,btn) {
+  stratTensionDays = d;
+  document.querySelectorAll('#strat-tension-controls .strat-day-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); stratRun();
+}
+function stratSetTensionScore(v,btn) {
+  stratTensionScore = v;
+  document.querySelectorAll('#strat-tension-controls [data-score]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); stratRun();
+}
+function stratSetTensionRange(min,max,btn) {
+  stratTensionMin = min; stratTensionMax = max;
+  document.querySelectorAll('#strat-tension-controls [data-min]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); stratRun();
+}
+
+// ── Strategy 5: Semantic Match + Undecided Price ──────────────────────────────
+// Markets from mpMatchAll that score >= threshold AND price is genuinely undecided.
+// These markets haven't moved yet despite a matching event — the opportunity window.
+function stratFilterSignal() {
+  if (!mpMatchAll || !mpMatchAll.length) return [];
+  return mpMatchAll
+    .filter(m => {
+      const score = m._score || 0;
+      const price = stratGetPrice(m);
+      return score >= stratSignalScore
+          && price >= stratSignalMin
+          && price <= stratSignalMax;
+    })
+    .sort((a, b) => {
+      // Primary: score desc. Secondary: price uncertainty (closer to 50 = higher)
+      const scoreGap = (b._score || 0) - (a._score || 0);
+      if (Math.abs(scoreGap) > 0.02) return scoreGap;
+      const ua = 1 - Math.abs(stratGetPrice(a) - 50) / 50;
+      const ub = 1 - Math.abs(stratGetPrice(b) - 50) / 50;
+      return ub - ua;
+    });
+}
+
+// ── Strategy 6: Semantic Match + Near-Expiry Tension ─────────────────────────
+// High match score + closing within N days + price undecided.
+// Highest urgency combination: the event is happening NOW, market expires SOON,
+// and the price hasn't moved to a certainty yet.
+function stratFilterTension() {
+  if (!mpMatchAll || !mpMatchAll.length) return [];
+  return mpMatchAll
+    .filter(m => {
+      const score = m._score || 0;
+      const price = stratGetPrice(m);
+      const days  = m.days_left != null ? parseFloat(m.days_left) : 9999;
+      return score >= stratTensionScore
+          && price >= stratTensionMin
+          && price <= stratTensionMax
+          && days  <= stratTensionDays;
+    })
+    .sort((a, b) => {
+      // Primary: days_left asc (most urgent first)
+      const daysDiff = (a.days_left ?? 999) - (b.days_left ?? 999);
+      if (Math.abs(daysDiff) > 0.5) return daysDiff;
+      // Secondary: score desc
+      return (b._score || 0) - (a._score || 0);
+    });
+}
+
+function stratRenderCard(m) {
+  const yes   = stratGetPrice(m);
+  const noAsk = m.no_ask != null ? parseFloat(m.no_ask)
+    : m.no_ask_dollars != null ? Math.round(parseFloat(m.no_ask_dollars)*100)
+    : Math.max(0, 100 - yes);
+
+  const days     = m.days_left != null ? parseFloat(m.days_left) : null;
+  const daysDisp = days != null ? (days < 1 ? '<1' : days < 2 ? days.toFixed(1) : Math.round(days).toString()) : '?';
+
+  // Urgency class
+  const urgClass = days == null ? 'moderate'
+    : days <= 1 ? 'urgent'
+    : days <= 4 ? 'soon'
+    : 'moderate';
+
+  // Urgency bar fill: inverse of days, capped at max_days param
+  const maxDays   = stratActiveTab === 'expiry' ? stratExpiryDays : stratExtremeDays;
+  const urgPct    = days != null ? Math.max(5, Math.round((1 - days / maxDays) * 100)) : 50;
+
+  // Signal badge
+  let signal, signalClass;
+  if (stratActiveTab === 'extreme') {
+    if (yes <= stratExtremeThresh) {
+      signal = `${yes}¢ YES — Underdog`;
+      signalClass = 'extreme-low';
+    } else {
+      signal = `${yes}¢ YES — Favourite`;
+      signalClass = 'extreme-high';
+    }
+  } else if (stratActiveTab === 'signal' || stratActiveTab === 'tension') {
+    const score = m._score || 0;
+    const dist  = Math.abs(yes - 50);
+    const priceLabel = dist <= 10 ? 'Coin flip' : yes < 50 ? `${yes}¢ Leans NO` : `${yes}¢ Leans YES`;
+    signal = `${score.toFixed(2)} match · ${priceLabel}`;
+    signalClass = score >= 0.5 ? 'extreme-high' : score >= 0.35 ? 'undecided' : 'extreme-low';
+  } else {
+    const dist = Math.abs(yes - 50);
+    signal = dist <= 10 ? 'Coin flip' : yes < 50 ? `${yes}¢ — Leans NO` : `${yes}¢ — Leans YES`;
+    signalClass = 'undecided';
+  }
+
+  // Build Kalshi URL
+  const seriesSlug   = (m.series_ticker || '').toLowerCase();
+  const eventTicker  = (m.event_ticker  || '').toLowerCase();
+  const seriesData   = mpSeriesMap[m.series_ticker || ''];
+  const titleSlug    = seriesData?.title
+    ? seriesData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    : seriesSlug.replace(/^kx/, '');
+  const url = seriesSlug && titleSlug && eventTicker
+    ? `https://kalshi.com/markets/${seriesSlug}/${titleSlug}/${eventTicker}`
+    : `https://kalshi.com/markets/${seriesSlug}`;
+
+  const catTag = m.category ? `<span class="strat-meta-tag">${m.category}</span>` : '';
+  // For signal/tension: days remaining tag and match score bar
+  const daysTag = (stratActiveTab === 'signal' || stratActiveTab === 'tension') && days != null
+    ? `<span class="strat-meta-tag" style="${days <= 7 ? 'color:#cc8800' : ''}">${daysDisp}d left</span>` : '';
+  const matchBar = (stratActiveTab === 'signal' || stratActiveTab === 'tension')
+    ? `<div class="k-score-bar" style="max-width:50px"><div class="k-score-fill" style="width:${Math.round((m._score||0)*100)}%"></div></div>` : '';
+  const spread = yes + noAsk;
+  const spreadTag = spread > 100
+    ? `<span class="strat-meta-tag" style="color:#884400">spread ${spread - 100}¢</span>`
+    : '';
+
+  return `<div class="strat-card">
+    <div class="strat-card-top">
+      <div class="strat-urgency-block">
+        ${(stratActiveTab === 'signal' || stratActiveTab === 'tension')
+          ? `<div class="strat-days-num ${(m._score||0)>=0.5?'urgent':(m._score||0)>=0.35?'soon':'moderate'}"
+               style="font-size:15px">${Math.round((m._score||0)*100)}%</div>
+             <div class="strat-days-label">match</div>`
+          : `<div class="strat-days-num ${urgClass}">${daysDisp}</div>
+             <div class="strat-days-label">days</div>`}
+      </div>
+      <div class="strat-card-title">${m.title || m.ticker}</div>
+      <div class="strat-prices">
+        <div class="strat-price-col">
+          <div class="strat-price-label">Yes</div>
+          <div class="strat-price-val yes">${yes}¢</div>
+        </div>
+        <div class="strat-price-col">
+          <div class="strat-price-label">No</div>
+          <div class="strat-price-val no">${noAsk}¢</div>
+        </div>
+      </div>
+    </div>
+    <div class="strat-card-meta">
+      <span class="strat-signal ${signalClass}">${signal}</span>
+      ${catTag}
+      ${daysTag}
+      ${matchBar}
+      ${spreadTag}
+      <a class="k-market-link" href="${url}" target="_blank" style="margin-left:auto">↗ kalshi</a>
+    </div>
+    <div class="strat-urgency-bar">
+      <div class="strat-urgency-fill ${urgClass}" style="width:${urgPct}%"></div>
+    </div>
+  </div>`;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+mpUpdatePriceRange();
+mpUpdateDaysRange();
+mpLoadSeries();
+mpUpdateStatus();
+mpFetchMatch();
+setInterval(mpFetchMatch,   30000);
+setInterval(mpUpdateStatus, 60000);
+
+// Strategy panel
+stratRun();
+
+// ── Pause / auto-refresh control ─────────────────────────────────────────────
+const PAUSE_DURATION = 5 * 60; // 5 minutes in seconds
+let mpPaused        = false;
+let mpPauseSecsLeft = 0;
+let mpPauseTimer    = null;
+let mpIntervals     = []; // store all interval IDs so we can cancel them
+
+function mpStartIntervals() {
+  // Clear any existing
+  mpIntervals.forEach(id => clearInterval(id));
+  mpIntervals = [];
+  mpIntervals.push(setInterval(mpFetchMatch,   30000));
+  mpIntervals.push(setInterval(mpUpdateStatus, 60000));
+  mpIntervals.push(setInterval(stratRun,       60000));
+}
+
+function mpTogglePause() {
+  if (mpPaused) {
+    // Resume
+    mpPaused = false;
+    if (mpPauseTimer) { clearInterval(mpPauseTimer); mpPauseTimer = null; }
+    mpStartIntervals();
+    const btn = document.getElementById('mp-pause-btn');
+    if (btn) { btn.textContent = '⏸ Pause'; btn.classList.remove('paused'); }
+  } else {
+    // Pause
+    mpPaused = true;
+    mpPauseSecsLeft = PAUSE_DURATION;
+    mpIntervals.forEach(id => clearInterval(id));
+    mpIntervals = [];
+    mpPauseTimer = setInterval(() => {
+      mpPauseSecsLeft--;
+      const btn = document.getElementById('mp-pause-btn');
+      if (mpPauseSecsLeft <= 0) {
+        // Auto-resume
+        mpTogglePause();
+      } else {
+        const m = Math.floor(mpPauseSecsLeft / 60);
+        const s = mpPauseSecsLeft % 60;
+        const label = `▶ ${m}:${s.toString().padStart(2,'0')} (+5m)`;
+        if (btn) { btn.textContent = label; btn.classList.add('paused'); }
+      }
+    }, 1000);
+    const btn = document.getElementById('mp-pause-btn');
+    if (btn) {
+      btn.textContent = '▶ 5:00 (+5m)';
+      btn.classList.add('paused');
+    }
+  }
+}
+
+// Start intervals normally
+mpStartIntervals();
+
+</script>
+
+  <!-- ── Loading overlay (shown while Kalshi markets are still fetching) ── -->
+  <div id="loading-overlay" style="display:none;position:fixed;inset:0;z-index:9999;
+       background:rgba(8,8,8,0.94);backdrop-filter:blur(4px);
+       flex-direction:column;align-items:center;justify-content:center;gap:18px;">
+    <div style="width:48px;height:48px;border:2px solid #1a1a1a;border-top-color:#4477dd;
+                border-radius:50%;animation:spin 1s linear infinite;"></div>
+    <div style="text-align:center;">
+      <div style="font-size:13px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;
+                  color:#4477dd;margin-bottom:8px;">Loading Market Dashboard</div>
+      <div id="overlay-status" style="font-size:11px;color:#444;letter-spacing:0.06em;">
+        Fetching market data…
+      </div>
+      <div style="font-size:10px;color:#2a2a2a;margin-top:6px;">
+        Page will refresh automatically when ready
+      </div>
+    </div>
+  </div>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <script>
+  (function() {
+    var THRESHOLD  = 1000;  // min markets before we consider data loaded
+    var POLL_MS    = 3000;  // check every 3s
+    var overlay    = document.getElementById('loading-overlay');
+    var statusEl   = document.getElementById('overlay-status');
+    var pollTimer  = null;
+    var shown      = false;
+
+    function checkLoaded() {
+      fetch('/api/kalshi/status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          var count = d.count || 0;
+          if (statusEl) {
+            statusEl.textContent = count > 0
+              ? count.toLocaleString() + ' markets loaded…'
+              : 'Connecting to Kalshi API…';
+          }
+          if (count >= THRESHOLD) {
+            // Data is ready
+            clearInterval(pollTimer);
+            if (shown) {
+              // We showed the overlay — data just finished loading.
+              // Dismiss and trigger a fresh series/match load without a full page reload.
+              if (overlay) overlay.style.display = 'none';
+              // Call the page's own load functions if they exist
+              // Reset retry counter so mpLoadSeries can run fresh
+              if (typeof _mpRetry !== 'undefined') _mpRetry = 0;
+              if (typeof _kSeriesRetry !== 'undefined') _kSeriesRetry = 0;
+              if (typeof mpLoadSeries  === 'function') mpLoadSeries();
+              if (typeof kLoadSeries   === 'function') kLoadSeries();
+              if (typeof mpFetchMatch  === 'function') mpFetchMatch();
+              if (typeof mpUpdateStatus=== 'function') mpUpdateStatus();
+            } else {
+              // Data was already loaded when page opened — just hide overlay (already hidden)
+              if (overlay) overlay.style.display = 'none';
+            }
+          } else {
+            // Not ready — show overlay
+            if (overlay && !shown) {
+              overlay.style.display = 'flex';
+              shown = true;
+            }
+          }
+        })
+        .catch(function() {
+          if (statusEl) statusEl.textContent = 'Waiting for server…';
+          if (overlay && !shown) { overlay.style.display = 'flex'; shown = true; }
+        });
+    }
+
+    // Check immediately, then poll
+    checkLoaded();
+    pollTimer = setInterval(checkLoaded, POLL_MS);
+  })();
+  </script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Event Dashboard</title>
+  <title>Event Trading Terminal</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -15,35 +15,44 @@
       font-weight: 400;
     }
 
-    /* ── Top title bar ── */
+    /* ── Title bar — matches dashboard/markets ── */
     .title-bar {
       width: 100%;
       background: #111111;
       border-bottom: 1px solid #252525;
-      padding: 14px 32px;
+      padding: 0 18px;
+      height: 40px;
       display: flex;
       align-items: center;
-      justify-content: center;
-      position: relative;
+      gap: 0;
     }
-
     .title-bar-text {
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 13px;
+      font-weight: 700;
       letter-spacing: 0.18em;
       color: #e2e2e2;
       text-transform: uppercase;
     }
-
+    .title-bar-nav {
+      display: flex; align-items: stretch; margin-left: 24px; gap: 0;
+    }
+    .title-bar-nav a {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+      text-transform: uppercase; text-decoration: none;
+      color: #444; padding: 0 14px;
+      display: flex; align-items: center;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .title-bar-nav a:hover { color: #888; }
+    .title-bar-nav a.active { color: #4477dd; border-bottom-color: #4477dd; }
     .title-bar-brand {
-      position: absolute;
-      right: 32px;
-      font-size: 13px;
-      font-weight: 400;
-      letter-spacing: 0.1em;
-      color: #505050;
+      margin-left: auto;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #2a2a2a; white-space: nowrap;
     }
 
+    /* ── Accent line ── */
     .accent-line {
       width: 100%;
       height: 2px;
@@ -52,251 +61,36 @@
         #aa0000 60%, #5a0000 85%, transparent 100%);
     }
 
-    /* ── Market indices bar ── */
-    .market-bar-wrap {
-      width: 100%;
-      background: #0d0d0d;
-      border-bottom: 1px solid #1a1a1a;
-    }
-    .market-bar {
-      width: 100%;
-      display: flex;
-      align-items: stretch;
-      overflow-x: auto;
-      min-height: 88px;
-    }
-    .market-bar.row2 {
-      min-height: 80px;
-      border-top: 1px solid #161616;
-      background: #0b0b0b;
-    }
-
-    .market-bar::-webkit-scrollbar { height: 2px; }
-    .market-bar::-webkit-scrollbar-thumb { background: #222; }
-
-    .market-bar-label {
-      flex-shrink: 0;
-      background: #111;
-      border-right: 1px solid #1e1e1e;
-      display: flex;
-      align-items: center;
-      padding: 0 16px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.3em;
-      color: #444;
-      text-transform: uppercase;
-      writing-mode: horizontal-tb;
-      white-space: nowrap;
-    }
-
-    .market-tile {
-      flex: 1;
-      min-width: 160px;
-      border-right: 1px solid #1a1a1a;
-      padding: 10px 14px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      align-items: center;
-      text-align: center;
-      transition: background 0.15s;
-    }
-
-    .market-tile:last-child { border-right: none; }
-    .market-tile:hover { background: #111; }
-
-    .market-tile.up   { border-top: 2px solid #1a5c1a; }
-    .market-tile.down { border-top: 2px solid #6b0000; }
-    .market-tile.flat { border-top: 2px solid #333; }
-    .market-tile.loading { border-top: 2px solid #222; }
-
-    .tile-top {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-
-    .tile-label {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      color: #aaa;
-      text-transform: uppercase;
-    }
-
-    .tile-status {
-      font-size: 9px;
-      font-weight: 600;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      padding: 1px 5px;
-    }
-
-    .status-open    { color: #2a7a2a; background: rgba(30,100,30,0.15); border: 1px solid rgba(30,100,30,0.25); }
-    .status-closed  { color: #555;    background: #141414;               border: 1px solid #1e1e1e; }
-    .status-futures { color: #886633; background: rgba(120,90,30,0.15); border: 1px solid rgba(120,90,30,0.25); }
-
-    /* change % = BIG dominant number */
-    .tile-change {
-      font-size: 22px;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -0.02em;
-      line-height: 1;
-      margin: 2px 0;
-    }
-    .tile-change.up   { color: #3a9e3a; }
-    .tile-change.down { color: #cc2200; }
-    .tile-change.flat { color: #888; }
-
-    /* actual price = small subdued label */
-    .tile-price {
-      font-size: 12px;
-      font-weight: 400;
-      letter-spacing: 0.01em;
-      font-variant-numeric: tabular-nums;
-      margin: 1px 0;
-    }
-    .tile-price.up   { color: #5a8a5a; }
-    .tile-price.down { color: #8a4a3a; }
-    .tile-price.flat { color: #555; }
-
-    .tile-meta {
-      display: flex;
-      gap: 10px;
-      margin-top: 5px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-
-    .tile-meta-item {
-      font-size: 10px;
-      color: #444;
-      letter-spacing: 0.04em;
-      white-space: nowrap;
-    }
-
-    .tile-meta-item strong { color: #666; font-weight: 600; }
-
-    .tile-time {
-      font-size: 9px;
-      color: #3a3a3a;
-      letter-spacing: 0.06em;
-      margin-top: 3px;
-    }
-
-    .tile-loading {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      font-size: 9px;
-      letter-spacing: 0.15em;
-      color: #2a2a2a;
-      text-transform: uppercase;
-    }
-
-    .market-updated {
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 0 14px;
-      border-left: 1px solid #1a1a1a;
-      min-width: 90px;
-    }
-
-    .market-updated-label {
-      font-size: 9px;
-      font-weight: 600;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: #2e2e2e;
-      margin-bottom: 3px;
-    }
-
-    .market-updated-time {
-      font-size: 10px;
-      color: #3a3a3a;
-      letter-spacing: 0.05em;
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* ── Tab navigation ── */
-    .tab-nav {
-      width: 100%;
-      display: flex;
-      justify-content: center;
-      align-items: stretch;
-      padding: 13px 0 0;
-    }
-
-    .tab {
-      font-size: 12px;
-      font-weight: 500;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: #777;
-      padding: 7px 24px;
-      text-decoration: none;
-      border: 1px solid transparent;
-      transition: all 0.15s;
-      margin: 0 1px;
-      display: flex;
-      align-items: center;
-    }
-
-    .tab:hover { color: #bbb; }
-
-    .tab.active {
-      color: #f0f0f0;
-      background: #7a0000;
-      border-color: #8b0000;
-    }
-
-    .tab-border {
-      width: 100%;
-      height: 1px;
-      background: #1c1c1c;
-    }
-
     /* ── Main content ── */
     .main {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      min-height: calc(100vh - 220px);
-      padding: 48px 32px 80px;
+      padding: 80px 32px 120px;
+      min-height: calc(100vh - 42px);
     }
 
     .dashboards-heading {
-      font-size: 31px;
+      font-size: 11px;
       font-weight: 700;
-      letter-spacing: 0.25em;
-      color: #c42000;
+      letter-spacing: 0.36em;
       text-transform: uppercase;
-      text-align: center;
-      margin-bottom: 36px;
+      color: #cc1100;
+      margin-bottom: 44px;
     }
 
     .cards-row {
       display: flex;
-      gap: 18px;
-      justify-content: center;
+      gap: 28px;
       flex-wrap: wrap;
-      max-width: 1060px;
-      width: 100%;
+      justify-content: center;
     }
 
+    /* ── Dashboard cards ── */
     .dash-card {
       background: #0d0d0d;
       border: 1px solid #272727;
-      width: 310px;
+      width: 320px;
       padding: 28px 28px 24px;
       display: flex;
       flex-direction: column;
@@ -312,43 +106,60 @@
     .dash-card .c.bl { bottom: -1px; left: -1px;  border-width: 0 0 1px 1px; }
     .dash-card .c.br { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
 
-    .dash-card:hover { border-color: #4a1010; background: #111; }
-    .dash-card.soon  { opacity: 0.45; pointer-events: none; }
+    .dash-card:hover {
+      border-color: #5a1010;
+      background: #0f0f0f;
+    }
 
     .card-title {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 700;
-      letter-spacing: 0.16em;
-      color: #ddd;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      margin-bottom: 12px;
+      color: #e0e0e0;
+      margin-bottom: 10px;
     }
 
     .card-desc {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 300;
-      line-height: 1.7;
+      line-height: 1.65;
       color: #666;
-      margin-bottom: 20px;
+      margin-bottom: 22px;
       flex: 1;
     }
 
-    .card-divider { width: 100%; height: 1px; background: #1d1d1d; margin-bottom: 14px; }
+    .card-divider {
+      width: 100%;
+      height: 1px;
+      background: #1e1e1e;
+      margin-bottom: 18px;
+    }
 
-    .card-features { list-style: none; display: flex; flex-direction: column; gap: 6px; }
-
-    .card-features li {
-      font-size: 12px;
-      font-weight: 400;
-      letter-spacing: 0.04em;
-      color: #4a4a4a;
+    .card-features {
+      list-style: none;
       display: flex;
-      align-items: center;
+      flex-direction: column;
       gap: 6px;
     }
 
-    .card-features li::before { content: '›'; color: #7a0000; font-size: 14px; line-height: 1; flex-shrink: 0; }
+    .card-features li {
+      font-size: 11px;
+      font-weight: 400;
+      color: #444;
+      letter-spacing: 0.04em;
+      padding-left: 12px;
+      position: relative;
+    }
 
+    .card-features li::before {
+      content: '–';
+      position: absolute;
+      left: 0;
+      color: #333;
+    }
+
+    /* ── Footer ── */
     footer {
       position: fixed;
       bottom: 0; left: 0; right: 0;
@@ -356,42 +167,31 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      border-top: 1px solid #181818;
+      border-top: 1px solid #151515;
       background: #0a0a0a;
     }
 
-    footer span { font-size: 11px; font-weight: 400; letter-spacing: 0.22em; color: #2e2e2e; text-transform: uppercase; }
+    footer span {
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #222;
+    }
   </style>
 </head>
 <body>
 
   <!-- Title bar -->
   <div class="title-bar">
-    <div class="title-bar-text">Event Dashboard</div>
+    <div class="title-bar-text">Event Trading Terminal</div>
+    <nav class="title-bar-nav">
+      <a href="/" class="active">Home</a>
+      <a href="/dashboard">Event Dashboard</a>
+      <a href="/markets">Market Dashboard</a>
+    </nav>
     <div class="title-bar-brand">KLTT Holdings</div>
   </div>
   <div class="accent-line"></div>
-
-  <!-- Market indices bar (two rows) -->
-  <div class="market-bar-wrap">
-    <div class="market-bar row1" id="market-bar-row1">
-      <div class="market-bar-label">Equities</div>
-      <div class="market-updated">
-        <div class="market-updated-label">Updated</div>
-        <div class="market-updated-time" id="market-updated-time">—</div>
-      </div>
-    </div>
-    <div class="market-bar row2" id="market-bar-row2">
-      <div class="market-bar-label">Commodities</div>
-    </div>
-  </div>
-
-  <!-- Tab navigation -->
-  <nav class="tab-nav">
-    <a class="tab active" href="index.html">Home</a>
-    <a class="tab" href="/dashboard">Bluesky Dashboard</a>
-  </nav>
-  <div class="tab-border"></div>
 
   <!-- Main content -->
   <main class="main">
@@ -402,8 +202,8 @@
       <a href="/dashboard" class="dash-card">
         <div class="c tl"></div><div class="c tr"></div>
         <div class="c bl"></div><div class="c br"></div>
-        <div class="card-title">Bluesky Dashboard</div>
-        <div class="card-desc">Explore events as they occur, detected from Bluesky posts.</div>
+        <div class="card-title">Event Dashboard</div>
+        <div class="card-desc">Real-time breaking news monitor. Detects emerging events from Bluesky feeds using keyword clustering and velocity spike analysis.</div>
         <div class="card-divider"></div>
         <ul class="card-features">
           <li>Live Bluesky Feed</li>
@@ -413,145 +213,24 @@
         </ul>
       </a>
 
-      <div class="dash-card soon">
+      <a href="/markets" class="dash-card">
         <div class="c tl"></div><div class="c tr"></div>
         <div class="c bl"></div><div class="c br"></div>
-        <div class="card-title">Market Signals</div>
-        <div class="card-desc">Financial news correlation and real-time sentiment tracking across sources.</div>
+        <div class="card-title">Market Dashboard</div>
+        <div class="card-desc">Browse and analyze Kalshi prediction markets. Semantic matching surfaces relevant markets for detected events, with trading strategy signals.</div>
         <div class="card-divider"></div>
         <ul class="card-features">
-          <li>RSS Feed Aggregation</li>
-          <li>Sentiment Scoring</li>
-          <li>Source Weighting</li>
-          <li>Alert Thresholds</li>
+          <li>Browse 30,000+ Open Markets</li>
+          <li>Semantic Event Matching</li>
+          <li>Near-Expiry & Extreme Signals</li>
+          <li>Trading Strategy Panel</li>
         </ul>
-      </div>
-
-      <div class="dash-card soon">
-        <div class="c tl"></div><div class="c tr"></div>
-        <div class="c bl"></div><div class="c br"></div>
-        <div class="card-title">Geo Intelligence</div>
-        <div class="card-desc">Location-tagged event mapping and regional signal analysis across geographies.</div>
-        <div class="card-divider"></div>
-        <ul class="card-features">
-          <li>Location Extraction</li>
-          <li>Regional Clustering</li>
-          <li>Map Visualization</li>
-          <li>Cross-Geography Export</li>
-        </ul>
-      </div>
+      </a>
 
     </div>
   </main>
 
   <footer><span>KLTT Holdings</span></footer>
-
-  <script>
-  const API_BASE = '';
-
-  function fmt(n, decimals = 2) {
-    if (n == null) return '—';
-    return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-  }
-
-  function relTime(iso) {
-    if (!iso) return '—';
-    const d = (Date.now() - new Date(iso)) / 1000;
-    if (d < 60)   return Math.round(d) + 's ago';
-    if (d < 3600) return Math.round(d / 60) + 'm ago';
-    return Math.round(d / 3600) + 'h ago';
-  }
-
-  function renderTile(idx) {
-    const dir    = idx.direction || 'flat';
-    const isOpen = idx.is_open;
-    const sym    = idx.currency_sym || '';
-
-    let statusHTML;
-    if (idx.always_open) {
-      statusHTML = `<span class="tile-status status-open">24/7</span>`;
-    } else if (idx.always_futures) {
-      statusHTML = `<span class="tile-status status-futures">Futures</span>`;
-    } else if (isOpen) {
-      statusHTML = `<span class="tile-status status-open">Open</span>`;
-    } else if (idx.futures) {
-      statusHTML = `<span class="tile-status status-futures">Futures</span>`;
-    } else {
-      statusHTML = `<span class="tile-status status-closed">Closed</span>`;
-    }
-
-    // If market closed and futures available, show futures price as primary
-    const displayPrice = (!isOpen && idx.futures) ? idx.futures.price : idx.price;
-    const displayDir   = (!isOpen && idx.futures) ? idx.futures.direction : dir;
-    const displayChg   = (!isOpen && idx.futures) ? idx.futures.change    : idx.change;
-    const displayPct   = (!isOpen && idx.futures) ? idx.futures.change_pct : idx.change_pct;
-
-    const sign = displayChg >= 0 ? '+' : '';
-
-    let timeHTML = '';
-    if (isOpen && idx.time_to_close) {
-      timeHTML = `<div class="tile-time">Closes in ${idx.time_to_close}</div>`;
-    } else if (!isOpen && idx.next_open) {
-      timeHTML = `<div class="tile-time">Opens ${idx.next_open}</div>`;
-    }
-
-    return `
-      <div class="market-tile ${displayDir}">
-        <div style="width:100%">
-          <div class="tile-top">
-            <div class="tile-label">${idx.label}</div>
-            ${statusHTML}
-          </div>
-          <div class="tile-change ${displayDir}">${sign}${fmt(displayPct)}%</div>
-          <div class="tile-price ${displayDir}">${sym}${fmt(displayPrice)}&ensp;<span style="font-size:10px;opacity:0.55">${sign}${fmt(displayChg)}</span></div>
-        </div>
-        <div style="width:100%">
-          <div class="tile-meta">
-            <div class="tile-meta-item">O: <strong>${sym}${fmt(idx.open)}</strong></div>
-            <div class="tile-meta-item">H: <strong>${sym}${fmt(idx.day_high)}</strong></div>
-            <div class="tile-meta-item">L: <strong>${sym}${fmt(idx.day_low)}</strong></div>
-          </div>
-          ${timeHTML}
-        </div>
-      </div>`;
-  }
-
-  async function fetchMarkets() {
-    try {
-      const r = await fetch(API_BASE + '/api/markets');
-      const d = await r.json();
-      const row1 = document.getElementById('market-bar-row1');
-      const row2 = document.getElementById('market-bar-row2');
-      row1.querySelectorAll('.market-tile').forEach(el => el.remove());
-      row2.querySelectorAll('.market-tile').forEach(el => el.remove());
-      const updatedPanel = row1.querySelector('.market-updated');
-      (d.indices || []).forEach(idx => {
-        const div = document.createElement('div');
-        div.innerHTML = renderTile(idx);
-        const tile = div.firstElementChild;
-        if ((idx.row || 1) === 2) {
-          row2.appendChild(tile);
-        } else {
-          row1.insertBefore(tile, updatedPanel);
-        }
-      });
-      if (d.last_updated) {
-        document.getElementById('market-updated-time').textContent = relTime(d.last_updated);
-      }
-    } catch(e) {
-      console.warn('[Markets] fetch error:', e);
-    }
-  }
-
-  // Initial fetch + refresh every 60s
-  fetchMarkets();
-  setInterval(fetchMarkets, 60000);
-  // Keep "X ago" timestamp fresh
-  setInterval(() => {
-    const el = document.getElementById('market-updated-time');
-    if (el && el._iso) el.textContent = relTime(el._iso);
-  }, 10000);
-  </script>
 
 </body>
 </html>

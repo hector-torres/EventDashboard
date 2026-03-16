@@ -594,12 +594,24 @@ class KalshiFeedManager:
                 if inferred_cat.lower() != category.lower():
                     continue
 
-            # Price filter — prices are cents (0-100); raw API values are also 0-100 cents
-            yes_price = m.get('yes_ask') or m.get('last_price') or 0
-            # Handle fractional dollar values (0.0-1.0) by converting to cents
-            if isinstance(yes_price, (int, float)) and yes_price <= 1.0 and yes_price > 0:
+            # Price filter — prices are cents (0-100)
+            # Try all price fields in priority order; convert dollar values to cents
+            yes_price = None
+            for field in ('yes_ask', 'last_price', 'yes_ask_dollars', 'last_price_dollars'):
+                raw = m.get(field)
+                if raw is not None:
+                    try:
+                        v = float(raw)
+                        if v > 0:
+                            yes_price = v
+                            break
+                    except (TypeError, ValueError):
+                        pass
+            if yes_price is None:
+                yes_price = 0.0
+            # Convert dollar values (0.0–1.0) to cents
+            if 0 < yes_price <= 1.0:
                 yes_price = yes_price * 100
-            yes_price = float(yes_price)
             # Allow zero-priced markets through when min_price is 0
             if yes_price == 0 and min_price == 0:
                 pass

@@ -1277,7 +1277,7 @@
     .strat-tab-tooltip {
       display: none;
       position: absolute;
-      bottom: calc(100% + 6px);
+      top: calc(100% + 6px);
       left: 50%; transform: translateX(-50%);
       width: 200px;
       background: #1a1a1a; border: 1px solid #2a2a2a;
@@ -1288,12 +1288,12 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.6);
       white-space: normal; text-align: left;
     }
-    .strat-tab-tooltip::after {
+    .strat-tab-tooltip::before {
       content: '';
       position: absolute;
-      top: 100%; left: 50%; transform: translateX(-50%);
+      bottom: 100%; left: 50%; transform: translateX(-50%);
       border: 5px solid transparent;
-      border-top-color: #2a2a2a;
+      border-bottom-color: #2a2a2a;
     }
     .strat-tab:hover .strat-tab-tooltip { display: block; }
 
@@ -1456,7 +1456,7 @@
     <!-- ══ Col 1: Browse ══════════════════════════════════════════════════ -->
     <div class="mp-col">
       <div class="mp-col-header">
-        <div class="mp-col-title">Browse</div>
+        <div class="mp-col-title">All Markets</div>
         <div class="mp-col-meta" id="mp-series-header-lbl">Select a category</div>
       </div>
 
@@ -1539,7 +1539,7 @@
     <!-- ══ Col 2: Semantic Match ══════════════════════════════════════════ -->
     <div class="mp-col">
       <div class="mp-col-header">
-        <div class="mp-col-title">Semantic Match</div>
+        <div class="mp-col-title">Event Matches</div>
         <div class="mp-col-meta" id="mp-corpus-lbl"></div>
       </div>
 
@@ -1580,7 +1580,7 @@
     <!-- ══ Col 3: Trading Strategy ════════════════════════════════════════ -->
     <div class="mp-col">
       <div class="mp-col-header">
-        <div class="mp-col-title">Trading Strategy</div>
+        <div class="mp-col-title">Expiry &amp; Price Strategies</div>
         <div class="mp-col-meta" id="strat-updated"></div>
       </div>
 

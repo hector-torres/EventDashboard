@@ -1622,6 +1622,7 @@
           <button class="strat-day-btn active" data-days="1" onclick="stratSetExtremeDays(1,this)">1d</button>
           <button class="strat-day-btn" data-days="3" onclick="stratSetExtremeDays(3,this)">3d</button>
           <button class="strat-day-btn" data-days="7" onclick="stratSetExtremeDays(7,this)">7d</button>
+          <button class="strat-day-btn" data-days="0" onclick="stratSetExtremeDays(0,this)">All</button>
           <div class="strat-filter-divider"></div>
           <span class="strat-filter-label">Edge</span>
           <button class="strat-range-btn active" data-thresh="10" onclick="stratSetExtremeThresh(10,this)">≤10¢/≥90¢</button>
@@ -2352,16 +2353,15 @@ async function stratFetchExpiry() {
 
 async function stratFetchExtreme() {
   // Near-expiry extreme: closing within N days, price <= thresh OR >= (100-thresh)
-  // Fetch low-price markets
+  // stratExtremeDays=0 means "All" — omit max_days param entirely
+  const buildParams = (minP, maxP) => {
+    const p = { min_price: minP, max_price: maxP, per_page: 200, page: 1 };
+    if (stratExtremeDays > 0) p.max_days = stratExtremeDays;
+    return new URLSearchParams(p);
+  };
   const [loResp, hiResp] = await Promise.all([
-    fetch(KALSHI_API + '/api/kalshi/markets?' + new URLSearchParams({
-      min_price: 0, max_price: stratExtremeThresh,
-      max_days: stratExtremeDays, per_page: 200, page: 1
-    })),
-    fetch(KALSHI_API + '/api/kalshi/markets?' + new URLSearchParams({
-      min_price: 100 - stratExtremeThresh, max_price: 100,
-      max_days: stratExtremeDays, per_page: 200, page: 1
-    })),
+    fetch(KALSHI_API + '/api/kalshi/markets?' + buildParams(0, stratExtremeThresh)),
+    fetch(KALSHI_API + '/api/kalshi/markets?' + buildParams(100 - stratExtremeThresh, 100)),
   ]);
   if (!loResp.ok || !hiResp.ok) throw new Error('HTTP error');
   const [loData, hiData] = await Promise.all([loResp.json(), hiResp.json()]);
@@ -2552,9 +2552,11 @@ function stratRenderCard(m) {
     : days <= 4 ? 'soon'
     : 'moderate';
 
-  // Urgency bar fill: inverse of days, capped at max_days param
-  const maxDays   = stratActiveTab === 'expiry' ? stratExpiryDays : stratExtremeDays;
-  const urgPct    = days != null ? Math.max(5, Math.round((1 - days / maxDays) * 100)) : 50;
+  // Urgency bar fill: time-based for expiry; price-extremity for extreme (esp. when All selected)
+  const maxDays = stratActiveTab === 'expiry' ? stratExpiryDays : stratExtremeDays;
+  const urgPct  = (stratActiveTab === 'extreme' && stratExtremeDays === 0)
+    ? Math.max(5, Math.round(Math.abs(yes - 50) / 50 * 100))  // all: use price extremity
+    : days != null ? Math.max(5, Math.round((1 - days / maxDays) * 100)) : 50;
 
   // Signal badge
   let signal, signalClass;

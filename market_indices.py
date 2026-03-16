@@ -168,19 +168,16 @@ INDICES_CONFIG = [
         'tooltip':        'Henry Hub Natural Gas futures (NG=F) · CME Globex (NYMEX) · ~23h/day Sun 18:00 – Fri 17:00 ET · Daily maintenance break ~17:00–18:00 ET · 15-min delayed (Yahoo Finance)',
     },
     {
-        'id':             'gold',
-        'label':          'Gold',
-        'symbol':         'GC=F',
-        'futures':        None,
+        'id':             'gasoline',
+        'label':          'Gasoline',
+        'symbol':         None,           # no Yahoo ticker — sourced from AAA
+        'source':         'aaa',          # custom source flag
         'currency':       'USD',
-        'exchange_tz':    'America/New_York',
-        'open_time':      dtime(18, 0),
-        'close_time':     dtime(17, 0),
-        'market_days':    [0, 1, 2, 3, 4, 6],
+        'currency_sym':   '$',
         'row':            2,
-        'always_futures': True,
+        'always_open':    True,           # display as always available
         'hide_countdown': True,
-        'tooltip':        'Gold futures (GC=F) · CME Globex (COMEX) · ~23h/day Sun 18:00 – Fri 17:00 ET · Daily maintenance break ~17:00–18:00 ET · 15-min delayed (Yahoo Finance)',
+        'tooltip':        'US National Average Regular Gasoline · Source: AAA · Updated 00:00, 08:00, 16:00 UTC',
     },
     {
         'id':             'btc',
@@ -274,12 +271,16 @@ class MarketIndicesManager:
 
     # ── Fetching ───────────────────────────────────────────────────────────────
 
-    def fetch_all(self) -> List[Dict]:
+    def fetch_all(self, gas_manager=None) -> List[Dict]:
         """Fetch all configured indices. Returns list of normalized index dicts."""
         results = []
         for cfg in INDICES_CONFIG:
             try:
-                data = self._fetch_index(cfg)
+                if cfg.get('source') == 'aaa':
+                    # AAA-sourced entry — pull from gas_manager, not Yahoo
+                    data = self._fetch_aaa(cfg, gas_manager)
+                else:
+                    data = self._fetch_index(cfg)
                 if data:
                     results.append(data)
                     self._cache[cfg['id']] = data
@@ -293,6 +294,53 @@ class MarketIndicesManager:
         self.status = "live"
         print(f"[Markets] Fetched {len(results)} indices.")
         return results
+
+    def _fetch_aaa(self, cfg: Dict, gas_manager=None) -> Optional[Dict]:
+        """Build a tile dict from AAA gas price data."""
+        gas = gas_manager.get_data() if gas_manager else {}
+        if gas.get('status') != 'ok':
+            # Return stale cache entry if available, else None
+            return self._cache.get(cfg['id'])
+
+        current   = gas.get('current')
+        yesterday = gas.get('yesterday')
+        week_ago  = gas.get('week_ago')
+        month_ago = gas.get('month_ago')
+        change    = gas.get('change', 0) or 0
+        chg_pct   = gas.get('change_pct', 0) or 0
+        direction = gas.get('direction', 'flat')
+        as_of     = gas.get('as_of', '')
+        currency  = cfg.get('currency_sym', '$')
+
+        return {
+            'id':             cfg['id'],
+            'label':          cfg['label'],
+            'row':            cfg.get('row', 2),
+            'tooltip':        cfg.get('tooltip', ''),
+            'symbol':         'AAA',
+            'currency':       'USD',
+            'currency_sym':   currency,
+            'price':          current,
+            'open':           week_ago,      # repurpose: "Week ago" as open
+            'prev_close':     yesterday,
+            'day_high':       None,
+            'day_low':        month_ago,     # repurpose: "Month ago" as low
+            'change':         change,
+            'change_pct':     chg_pct,
+            'direction':      direction,
+            'is_open':        True,
+            'always_open':    True,
+            'always_futures': False,
+            'hide_countdown': True,
+            'time_to_close':  None,
+            'next_open':      None,
+            'futures':        None,
+            'fetched_at':     gas.get('last_updated', ''),
+            'sparkline':      [],
+            'sparkline_open_frac': None,
+            'aaa_as_of':      as_of,
+            'aaa_source':     True,
+        }
 
     def _fetch_index(self, cfg: Dict) -> Optional[Dict]:
         """Fetch a single index from Yahoo Finance."""

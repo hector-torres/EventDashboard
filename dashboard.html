@@ -1654,7 +1654,9 @@ function renderTile(idx) {
   const sym    = idx.currency_sym || '';
 
   let statusHTML;
-  if (idx.always_open) {
+  if (idx.aaa_source) {
+    statusHTML = `<span class="tile-status status-open" title="Source: AAA gasprices.aaa.com · as of ${idx.aaa_as_of || 'today'}">AAA</span>`;
+  } else if (idx.always_open) {
     statusHTML = `<span class="tile-status status-open">24/7</span>`;
   } else if (idx.always_futures) {
     statusHTML = `<span class="tile-status status-futures">Futures</span>`;
@@ -1716,9 +1718,14 @@ function renderTile(idx) {
       </div>
       <div style="width:100%">
         <div class="tile-meta">
-          <div class="tile-meta-item">O: <strong>${sym}${fmt(idx.open)}</strong></div>
-          <div class="tile-meta-item">H: <strong>${sym}${fmt(idx.day_high)}</strong></div>
-          <div class="tile-meta-item">L: <strong>${sym}${fmt(idx.day_low)}</strong></div>
+          ${idx.aaa_source
+            ? `<div class="tile-meta-item">Yest: <strong>${sym}${fmt(idx.prev_close)}</strong></div>
+               <div class="tile-meta-item">Wk: <strong>${sym}${fmt(idx.open)}</strong></div>
+               <div class="tile-meta-item">Mo: <strong>${sym}${fmt(idx.day_low)}</strong></div>`
+            : `<div class="tile-meta-item">O: <strong>${sym}${fmt(idx.open)}</strong></div>
+               <div class="tile-meta-item">H: <strong>${sym}${fmt(idx.day_high)}</strong></div>
+               <div class="tile-meta-item">L: <strong>${sym}${fmt(idx.day_low)}</strong></div>`
+          }
         </div>
         <div class="tile-sparkline-wrap">${renderSparkline(idx.sparkline || [], displayDir, idx.prev_close ?? null, document.getElementById("tile-" + idx.id + "-lbl"))}</div>
         ${countdownHTML}

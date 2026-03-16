@@ -13,6 +13,7 @@ from bluesky_feed import BlueSkyFeedManager
 from event_detector import EventDetector
 from market_indices import MarketIndicesManager
 from kalshi_feed import KalshiFeedManager
+from gas_prices import GasPricesManager
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
@@ -22,6 +23,7 @@ feed_manager   = BlueSkyFeedManager()
 event_detector = EventDetector()
 market_manager = MarketIndicesManager()
 kalshi_manager = KalshiFeedManager()   # starts its own daily background thread
+gas_manager    = GasPricesManager()
 
 # kalshi_manager handles series internally
 
@@ -41,13 +43,14 @@ def poll_feeds():
 def poll_markets():
     while True:
         try:
-            market_manager.fetch_all()
+            market_manager.fetch_all(gas_manager=gas_manager)
         except Exception as e:
             print(f"[Market Poll Error] {e}")
         time.sleep(MARKET_POLL_INTERVAL)
 
 threading.Thread(target=poll_feeds,   daemon=True).start()
 threading.Thread(target=poll_markets, daemon=True).start()
+gas_manager.start()   # scrapes AAA at 00:00, 08:00, 16:00 UTC
 
 # ─── Page routes ──────────────────────────────────────────────────────────────
 
@@ -133,10 +136,16 @@ def get_markets():
         'status':       market_manager.status,
     })
 
+@app.route('/api/gas')
+def api_gas():
+    """AAA national average gas prices (updated ~every 8h)."""
+    return jsonify(gas_manager.get_data())
+
+
 @app.route('/api/markets/refresh', methods=['POST'])
 def refresh_markets():
     try:
-        indices = market_manager.fetch_all()
+        indices = market_manager.fetch_all(gas_manager=gas_manager)
         return jsonify({'success': True, 'count': len(indices)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

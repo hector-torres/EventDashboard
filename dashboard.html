@@ -584,15 +584,15 @@
     .feed-name {
       font-size: 12px;
       font-weight: 600;
-      color: #bbb;
+      color: #dddddd;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       letter-spacing: 0.03em;
     }
 
-    .feed-handle { font-size: 11px; color: #444; }
-    .feed-time   { font-size: 11px; color: #333; letter-spacing: 0.04em; flex-shrink: 0; }
+    .feed-handle { font-size: 11px; color: #666; }
+    .feed-time   { font-size: 11px; color: #555; letter-spacing: 0.04em; flex-shrink: 0; }
 
     .feed-badge {
       font-size: 9px;
@@ -608,26 +608,163 @@
     .feed-badge.priority { background: rgba(180,120,0,0.15); color: #cc8800; border: 1px solid rgba(180,120,0,0.3); }
     .feed-badge.repeat   { background: rgba(40,40,80,0.25); color: #4455aa; border: 1px solid rgba(60,60,120,0.35); }
 
+    /* Noise scoring */
+    .feed-item.noise-dim {
+      opacity: 0.42;
+      filter: saturate(0.5);
+      transition: opacity 0.15s, filter 0.15s;
+    }
+    .feed-item.noise-dim:hover {
+      opacity: 0.85;
+      filter: saturate(0.85);
+    }
+    .feed-badge.noise {
+      color: #664400; border-color: #332200; background: #1a1000;
+    }
+    .feed-badge.media {
+      color: #226688; border-color: #0d3344; background: #050e14;
+    }
+
+    /* ══ PANEL 3: KEYWORD SWEEP ═══════════════════════ */
+
+    #sf3-panel { display: flex; flex-direction: column; }
+
+    /* Keyword list tooltip */
+    .sf3-kw-btn {
+      font-size: 10px; color: #551100; cursor: pointer;
+      user-select: none; opacity: 0.7; line-height: 1;
+      transition: opacity 0.15s; font-weight: 400;
+    }
+    .sf3-kw-btn:hover { opacity: 1; color: #cc4400; }
+    .sf3-kw-tooltip {
+      display: none; position: absolute; z-index: 400;
+      left: 8px; top: calc(100% + 2px);
+      width: 280px;
+      background: #0d0d0d; border: 1px solid #2a1500;
+      border-radius: 4px; padding: 10px 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+      font-weight: 400;
+    }
+    .sf3-kw-tooltip.visible { display: block; }
+    .sf3-kw-title {
+      font-size: 10px; font-weight: 700; color: #cc4400;
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;
+    }
+    .sf3-kw-body {
+      font-size: 10px; color: #666; line-height: 1.5; margin-bottom: 8px;
+      border-bottom: 1px solid #1e1e1e; padding-bottom: 7px;
+    }
+    .sf3-kw-item {
+      font-size: 10px; color: #888; padding: 2px 0;
+      letter-spacing: 0.03em; font-family: monospace;
+    }
+
+    /* Noise filter bar */
+    .sf3-filter-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 14px; border-bottom: 1px solid #1a1a1a;
+      background: #090909; flex-shrink: 0; gap: 8px; min-height: 34px;
+      position: relative;
+    }
+    .sf3-filter-left  { display: flex; align-items: center; gap: 5px; }
+    .sf3-filter-right { display: flex; align-items: center; gap: 7px; flex: 1; justify-content: flex-end; }
+    .sf3-filter-label { font-size: 10px; color: #555; letter-spacing: 0.06em; white-space: nowrap; }
+    .sf3-filter-value { font-size: 11px; font-weight: 700; color: #cc3300; min-width: 16px; text-align: right; }
+    .sf3-filter-hint  { font-size: 9px; color: #333; white-space: nowrap; }
+
+    /* Info button */
+    .sf3-info-btn {
+      font-size: 10px; color: #551100; cursor: pointer;
+      user-select: none; opacity: 0.7; line-height: 1;
+      transition: opacity 0.15s;
+    }
+    .sf3-info-btn:hover { opacity: 1; color: #cc4400; }
+
+    /* Tooltip */
+    .sf3-tooltip {
+      display: none; position: absolute; z-index: 300;
+      left: 8px; top: calc(100% + 4px);
+      width: 300px;
+      background: #0d0d0d; border: 1px solid #2a1500;
+      border-radius: 4px; padding: 12px 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+    }
+    .sf3-tooltip.visible { display: block; }
+    .sf3-tooltip-title {
+      font-size: 11px; font-weight: 700; color: #cc4400;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .sf3-tooltip-body { font-size: 10px; color: #888; line-height: 1.55; }
+    .sf3-tooltip-list {
+      padding-left: 14px; margin: 6px 0 8px;
+      color: #777; list-style: disc;
+    }
+    .sf3-tooltip-list li { margin-bottom: 3px; }
+    .sf3-tooltip-list strong { color: #999; }
+    .sf3-tooltip-thresholds {
+      font-size: 9.5px; color: #555; border-top: 1px solid #1e1e1e;
+      padding-top: 7px; margin-top: 4px; line-height: 1.5;
+    }
+    .sf3-tooltip-thresholds strong { color: #888; }
+
+    /* Slider */
+    .sf3-slider-wrap  { width: 100px; }
+    .sf3-slider-track {
+      position: relative; height: 2px;
+      background: #1e1e1e; border-radius: 2px;
+    }
+    .sf3-slider-fill {
+      position: absolute; height: 100%; background: #aa2200;
+      border-radius: 2px; pointer-events: none; left: 0;
+    }
+    .sf3-slider {
+      position: absolute; width: 100%; top: -6px; margin: 0;
+      -webkit-appearance: none; appearance: none;
+      height: 14px; background: transparent; cursor: pointer; outline: none;
+    }
+    .sf3-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 11px; height: 11px;
+      background: #cc2200; border-radius: 50%;
+      border: 1px solid #ee3300; cursor: pointer;
+    }
+    .sf3-slider::-moz-range-thumb {
+      width: 11px; height: 11px; background: #cc2200; border-radius: 50%;
+      border: 1px solid #ee3300; cursor: pointer;
+    }
+
+    /* Post body — fills remaining height */
+    .sf3-body {
+      flex: 1; overflow-y: auto; min-height: 0;
+    }
+
     .feed-text {
-      font-size: 13px;
-      font-weight: 300;
-      line-height: 1.6;
-      color: #888;
-      margin-bottom: 7px;
+      font-size: 14px;
+      font-weight: 400;
+      line-height: 1.65;
+      color: #cccccc;
+      margin-bottom: 8px;
       word-break: break-word;
+      white-space: pre-wrap;
     }
 
     .feed-stats { display: flex; gap: 14px; align-items: center; }
 
-    .feed-stat { font-size: 11px; color: #2e2e2e; letter-spacing: 0.05em; }
+    .feed-stat { font-size: 11px; color: #555; letter-spacing: 0.05em; }
+    .feed-noise-score {
+      color: #552200; font-weight: 600; letter-spacing: 0.04em;
+      border: 1px solid #2a1000; background: #110800;
+      padding: 0 4px; border-radius: 2px; cursor: default;
+    }
+    .feed-item.noise-dim .feed-noise-score { color: #331500; border-color: #1a0800; }
 
     .feed-link {
-      font-size: 11px; color: #3a3a3a;
+      font-size: 11px; color: #555;
       text-decoration: none; letter-spacing: 0.08em;
       margin-left: auto; transition: color 0.15s;
     }
 
-    .feed-link:hover { color: #888; }
+    .feed-link:hover { color: #aaa; }
 
     .state-loading { padding: 48px 20px; text-align: center; }
 
@@ -809,7 +946,7 @@
       gap: 8px;
     }
 
-    .event-title { font-size: 13px; font-weight: 600; color: #bbb; line-height: 1.4; flex: 1; }
+    .event-title { font-size: 13px; font-weight: 600; color: #dddddd; line-height: 1.4; flex: 1; }
 
     .event-sev {
       font-size: 9px; font-weight: 700;
@@ -824,20 +961,20 @@
     .event-samples { margin-bottom: 7px; }
 
     .event-sample {
-      font-size: 14px; font-weight: 300;
-      color: #666; line-height: 1.6;
+      font-size: 14px; font-weight: 400;
+      color: #bbbbbb; line-height: 1.6;
       border-left: 1px solid #222;
       padding-left: 8px; margin-bottom: 4px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      white-space: normal; word-break: break-word;
       letter-spacing: 0.01em;
     }
 
     .event-meta { display: flex; gap: 12px; align-items: center; }
-    .event-tag  { font-size: 11px; color: #333; letter-spacing: 0.05em; }
-    .event-tag strong { color: #555; }
+    .event-tag  { font-size: 11px; color: #555; letter-spacing: 0.05em; }
+    .event-tag strong { color: #888; }
 
     .event-expand-btn {
-      font-size: 10px; color: #2a2a2a; letter-spacing: 0.06em;
+      font-size: 10px; color: #555555; letter-spacing: 0.06em;
       background: none; border: none; cursor: pointer; padding: 0;
       margin-left: auto; user-select: none; transition: color 0.1s;
       pointer-events: all;
@@ -858,12 +995,12 @@
     }
     .event-post-row:last-child { border-bottom: none; }
     .event-post-handle {
-      font-size: 10px; color: #3a3a3a; white-space: nowrap;
+      font-size: 10px; color: #666666; white-space: nowrap;
       flex-shrink: 0; padding-top: 2px;
     }
     .event-post-handle.news-src { color: #885500; }
     .event-post-text {
-      font-size: 13px; color: #555; line-height: 1.5; flex: 1; min-width: 0;
+      font-size: 14px; color: #aaaaaa; line-height: 1.55; flex: 1; min-width: 0;
     }
     .event-post-link {
       font-size: 11px; color: #2a2a2a; text-decoration: none;
@@ -1195,7 +1332,7 @@
       <div class="panel-header">
         <div class="panel-title-group">
           <div class="panel-bar" style="background:#8b0000"></div>
-          <div class="panel-title" style="color:#aa2200">Bluesky Feed</div>
+          <div class="panel-title" style="color:#aa2200">News Accounts</div>
           <div class="panel-count" id="feed-count">0 posts</div>
         </div>
         <div class="panel-right">
@@ -1206,12 +1343,9 @@
 
       <div class="feed-panel-inner">
 
-        <!-- Top half: priority accounts -->
+        <!-- Priority accounts feed (full panel) -->
         <div class="feed-half news-half">
-          <div class="feed-half-header news-header">
-            <div class="feed-half-title" style="color:#c07820">📰 News Accounts</div>
-            <div class="feed-half-count" id="news-count">0 posts</div>
-          </div>
+
           <div class="feed-half-body" id="news-body">
             <div class="feed-half-empty" id="news-empty">
               No news accounts loaded.<br>Add handles to accounts.txt
@@ -1219,31 +1353,12 @@
           </div>
         </div>
 
-        <div class="feed-half-divider"></div>
 
-        <!-- Bottom half: search-based posts -->
-        <div class="feed-half search-half">
-          <div class="feed-half-header search-header">
-            <div class="feed-half-title" style="color:#882200;display:flex;align-items:center;gap:5px">
-              ⌕ Search Feed
-              <span class="sf-info-btn" id="sf-info-btn" onclick="sfToggleTooltip(event)">ⓘ</span>
-              <div class="sf-tooltip" id="sf-tooltip">
-                <div class="sf-tooltip-title">What is the Search Feed?</div>
-                <div class="sf-tooltip-body" id="sf-tooltip-body">Queries Bluesky in real-time using the spike keywords detected above. Each keyword chip becomes a live search — posts matching those terms are pulled here as they appear on Bluesky.</div>
-              </div>
-            </div>
-            <div class="feed-half-count" id="search-count">0 posts</div>
-          </div>
-          <div class="feed-half-body" id="search-body">
-            <div class="state-loading" id="feed-loading">
-              <div class="spinner"></div>
-              <div class="state-text">Connecting to Bluesky</div>
-            </div>
-          </div>
-        </div>
 
       </div>
 
+      <!-- Hidden sink for search posts — routed to Panel 3 via sf3IngestPosts -->
+      <div id="search-body" style="display:none"></div>
       <div class="panel-footer">
         <div class="footer-stat">Updated: <strong id="feed-updated">—</strong></div>
         <div class="footer-stat">Feeds: <strong id="feed-sources">3</strong></div>
@@ -1277,174 +1392,90 @@
       </div>
     </div>
 
-    <!-- PANEL 3: KALSHI MARKETS -->
-    <div class="panel" id="kalshi-panel">
+    <!-- PANEL 3: KEYWORD SWEEP -->
+    <div class="panel" id="sf3-panel">
 
       <!-- Header -->
-      <div class="panel-header">
+      <div class="panel-header" style="position:relative">
         <div class="panel-title-group">
-          <div class="panel-bar" style="background:#003388"></div>
-          <div class="panel-title" style="color:#2255aa">Event Matches</div>
-          <div class="panel-count" id="kalshi-count">—</div>
-        </div>
-      </div>
-
-      <!-- Sub-tab bar: Browse | Semantic Match -->
-      <div class="k-tabs">
-        <div class="k-tab active" id="ktab-filter" onclick="kSwitchTab('filter')">Browse</div>
-        <div class="k-tab"        id="ktab-match"  onclick="kSwitchTab('match')">Semantic Match</div>
-      </div>
-
-      <!-- BROWSE: search bar (above 3-col layout) -->
-      <div class="k-search-bar" id="k-browse-search-bar">
-        <input class="k-search-input" id="k-search-input" placeholder="Search markets…" oninput="kOnSearch()" autocomplete="off">
-        <button class="k-search-clear" id="k-search-clear" onclick="kClearSearch()" style="display:none">✕</button>
-      </div>
-
-      <!-- BROWSE TAB: 3-column layout -->
-      <div class="k-browse" id="k-browse-panel">
-
-        <!-- Column 1: Categories -->
-        <div class="k-col k-col-cat">
-          <div class="k-col-header">Category</div>
-          <div class="k-col-scroll" id="k-cat-list">
-            <div style="padding:12px;font-size:10px;color:#222">Loading…</div>
+          <div class="panel-bar" style="background:#8b0000"></div>
+          <div class="panel-title" style="color:#aa2200;display:flex;align-items:center;gap:5px">
+            Keyword Sweep
+            <span class="sf3-kw-btn" id="sf3-kw-btn" onclick="sf3ToggleKeywords(event)">ⓘ</span>
+            <div class="sf3-kw-tooltip" id="sf3-kw-tooltip">
+              <div class="sf3-kw-title">Active Search Queries</div>
+              <div class="sf3-kw-body">
+                Bluesky is searched every 30s using these queries. Any post matching
+                a query from any public account is pulled into this feed.
+              </div>
+              <div class="sf3-kw-item">⌕ breaking</div><div class="sf3-kw-item">⌕ just in</div><div class="sf3-kw-item">⌕ developing story</div><div class="sf3-kw-item">⌕ flash alert</div><div class="sf3-kw-item">⌕ explosion attack strike</div><div class="sf3-kw-item">⌕ earthquake hurricane tornado wildfire</div><div class="sf3-kw-item">⌕ market crash rate hike fed reserve</div><div class="sf3-kw-item">⌕ missile launches troops invasion sanctions</div>
+            </div>
           </div>
+          <div class="panel-count" id="sf3-count">0 posts</div>
         </div>
-
-        <!-- Column 2: Series -->
-        <div class="k-col k-col-series">
-          <div class="k-col-header" id="k-series-header">Series</div>
-          <div class="k-col-scroll" id="k-series-list">
-            <div style="padding:12px;font-size:10px;color:#222">← Select a category</div>
-          </div>
+        <div class="panel-right">
+          <div class="live-dot"></div>
+          <div class="panel-status" id="sf3-status">live</div>
         </div>
+      </div>
 
-        <!-- Column 3: Markets -->
-        <div class="k-col k-col-markets">
-          <!-- Slim price + days filter strip -->
-          <div class="k-mkt-filters">
-            <div class="k-filter-label">Price</div>
-            <div class="k-range-wrap">
-              <div class="k-range-track">
-                <div class="k-range-fill" id="k-price-fill"></div>
-                <input type="range" class="k-slider" id="k-price-min" min="1" max="99" value="1"
-                       oninput="kUpdatePriceRange()">
-                <input type="range" class="k-slider" id="k-price-max" min="1" max="99" value="99"
-                       oninput="kUpdatePriceRange()">
+      <!-- Noise filter bar -->
+      <div class="sf3-filter-bar" id="sf3-filter-bar">
+        <div class="sf3-filter-left">
+          <span class="sf3-filter-label">Noise filter</span>
+          <!-- Info button + tooltip -->
+          <span class="sf3-info-btn" id="sf3-info-btn" onclick="sf3ToggleTooltip(event)">ⓘ</span>
+          <div class="sf3-tooltip" id="sf3-tooltip">
+            <div class="sf3-tooltip-title">Noise Filter</div>
+            <div class="sf3-tooltip-body">
+              Scores each post from 0 (clean) to 10+ (noisy) using 10 independent signals:
+              <ul class="sf3-tooltip-list">
+                <li><strong>Content length</strong> — posts under 20 chars (+5)</li>
+                <li><strong>Account age</strong> — accounts under 7 days old (+2–5)</li>
+                <li><strong>Hashtag count</strong> — 3+ hashtags suggest tag-stuffing (+2–4)</li>
+                <li><strong>Engagement</strong> — zero likes/reposts/replies (+1); real engagement (−1 bonus)</li>
+                <li><strong>Solicitation</strong> — follow-farming phrases (+5)</li>
+                <li><strong>Reply</strong> — replies in search results rarely have news value (+3)</li>
+                <li><strong>Language</strong> — non-English posts (+3)</li>
+                <li><strong>URL-only</strong> — post is just a link with no context (+4)</li>
+                <li><strong>Mentions</strong> — more than 3 @mentions suggests spam (+2–4)</li>
+                <li><strong>Repeat handle</strong> — same account posting 3+ times in one batch (+2–3)</li>
+              </ul>
+              <div class="sf3-tooltip-thresholds">
+                The slider sets the <strong>hide threshold</strong> (default 5). Posts above the threshold
+                are filtered out entirely. Posts within 2 points below it are dimmed.
+                Priority news accounts are never filtered.
               </div>
             </div>
-            <div class="k-filter-value" id="k-price-label">Any</div>
-            <div class="k-slider-divider"></div>
-            <div class="k-filter-label">Days</div>
-            <div class="k-range-wrap">
-              <div class="k-range-track">
-                <div class="k-range-fill" id="k-days-fill"></div>
-                <input type="range" class="k-slider" id="k-days-min" min="0" max="100" value="0"
-                       oninput="kUpdateDaysRange()">
-                <input type="range" class="k-slider" id="k-days-max" min="0" max="100" value="100"
-                       oninput="kUpdateDaysRange()">
-              </div>
-            </div>
-            <div class="k-filter-value" id="k-days-label">Any</div>
-          </div>
-          <!-- Sort strip -->
-          <div class="k-sort-strip">
-            <div class="k-sort-label">Sort</div>
-            <button class="k-sort-btn active" id="ksort-default" onclick="kSetSort('default')">Default</button>
-            <button class="k-sort-btn" id="ksort-price-asc" onclick="kSetSort('price-asc')">Price ↑</button>
-            <button class="k-sort-btn" id="ksort-price-desc" onclick="kSetSort('price-desc')">Price ↓</button>
-            <button class="k-sort-btn" id="ksort-close-asc" onclick="kSetSort('close-asc')">Closing ↑</button>
-            <button class="k-sort-btn" id="ksort-close-desc" onclick="kSetSort('close-desc')">Closing ↓</button>
-          </div>
-          <!-- Market list -->
-          <div class="k-col-scroll" id="k-market-body">
-            <div class="state-empty" id="k-empty" style="padding:16px;font-size:10px;color:#222">← Select a series</div>
-          </div>
-          <!-- Pagination -->
-          <div class="k-pagination" id="k-pagination">
-            <button class="k-page-btn" id="k-prev-btn" onclick="kChangePage(-1)" disabled>← Prev</button>
-            <span class="k-page-info" id="k-page-info">Page 1 of 1</span>
-            <button class="k-page-btn" id="k-next-btn" onclick="kChangePage(1)" disabled>Next →</button>
           </div>
         </div>
-
-      </div>
-
-      <!-- MATCH CONTROLS (shown on Match tab) -->
-      <div class="k-filters" id="k-match-controls" style="display:none">
-        <div class="k-filter-row">
-          <div class="k-filter-label">Confidence</div>
-          <div class="k-range-wrap" style="flex:1">
-            <div class="k-range-track">
-              <div class="k-range-fill" id="k-conf-fill" style="left:0;width:25%"></div>
-              <input type="range" class="k-slider single" id="k-conf-slider"
-                     min="5" max="60" step="5" value="15"
-                     oninput="kUpdateConfidence()">
+        <div class="sf3-filter-right">
+          <div class="sf3-slider-wrap">
+            <div class="sf3-slider-track">
+              <div class="sf3-slider-fill" id="sf3-slider-fill"></div>
+              <input type="range" class="sf3-slider" id="sf3-threshold"
+                     min="3" max="10" step="1" value="5"
+                     oninput="sf3UpdateThreshold()">
             </div>
           </div>
-          <div class="k-filter-value" id="k-conf-value" style="min-width:56px">0.15</div>
-        </div>
-        <div class="k-filter-row" style="justify-content:flex-end">
-          <div class="k-filter-value" id="k-match-corpus" style="color:#666;font-style:italic">
-            Initializing corpus…
-          </div>
+          <div class="sf3-filter-value" id="sf3-threshold-label">5</div>
+          <div class="sf3-filter-hint" id="sf3-filter-hint">hide ≥5 · dim ≥3</div>
         </div>
       </div>
 
-      <!-- Match tab: same 3-column layout, hidden until match tab active -->
-      <div class="k-browse" id="k-match-body" style="display:none">
-
-        <!-- Col 1: Matched categories -->
-        <div class="k-col k-col-cat">
-          <div class="k-col-header">Category</div>
-          <div class="k-col-scroll" id="km-cat-list">
-            <div style="padding:12px;font-size:10px;color:#333">Run a match…</div>
-          </div>
-        </div>
-
-        <!-- Col 2: Matched series -->
-        <div class="k-col k-col-series">
-          <div class="k-col-header" id="km-series-header">Series</div>
-          <div class="k-col-scroll" id="km-series-list">
-            <div style="padding:12px;font-size:10px;color:#333">← Select a category</div>
-          </div>
-        </div>
-
-        <!-- Col 3: Matched markets -->
-        <div class="k-col k-col-markets">
-          <!-- Sort strip for match tab -->
-          <div class="k-sort-strip" id="km-sort-strip">
-            <div class="k-sort-label">Sort</div>
-            <button class="k-sort-btn active" id="kmsort-conf"      onclick="kSetMatchSort('conf')">Confidence</button>
-            <button class="k-sort-btn"        id="kmsort-prob-desc" onclick="kSetMatchSort('prob-desc')">Prob ↓</button>
-            <button class="k-sort-btn"        id="kmsort-prob-asc"  onclick="kSetMatchSort('prob-asc')">Prob ↑</button>
-            <button class="k-sort-btn"        id="kmsort-value"     onclick="kSetMatchSort('value')" title="Confidence × price uncertainty — surfaces relevant markets before they fully price in">Value</button>
-          </div>
-          <div class="k-col-scroll" id="km-market-body">
-            <div id="k-match-empty" style="padding:16px 18px;font-size:10px;line-height:1.7;color:#555;max-width:340px">
-              <div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px">Semantic Match</div>
-              <div style="margin-bottom:10px;color:#444">Compares detected events and recent posts against every open Kalshi market using token overlap and character bigram similarity.</div>
-              <div style="color:#3a3a3a;font-style:italic">Switch to this tab after events are detected to see matching markets. Works best when events contain proper nouns — "Fed", "CPI", "Bitcoin" — that also appear in Kalshi market titles.</div>
-            </div>
-          </div>
-          <div class="k-pagination" id="k-match-pagination">
-            <button class="k-page-btn" id="k-prev-btn-m" onclick="kChangePageMatch(-1)" disabled>← Prev</button>
-            <span class="k-page-info" id="k-page-info-m">Page 1 of 1</span>
-            <button class="k-page-btn" id="k-next-btn-m" onclick="kChangePageMatch(1)" disabled>Next →</button>
-          </div>
-        </div>
-
+      <!-- Post body -->
+      <div class="panel-body sf3-body" id="sf3-body">
+        <div class="state-empty" id="sf3-empty">Waiting for search feed…</div>
       </div>
 
-      <!-- Status / refresh bar -->
-      <div class="k-status-bar">
-        <span class="k-status-text" id="k-status-text">Initializing…</span>
-        <button class="k-refresh-btn" onclick="kManualRefresh()">↻ Refresh</button>
+      <!-- Footer -->
+      <div class="panel-footer">
+        <div class="footer-stat">Shown: <strong id="sf3-shown">0</strong></div>
+        <div class="footer-stat">Hidden: <strong id="sf3-hidden">0</strong></div>
+        <div class="footer-stat">Dimmed: <strong id="sf3-dimmed">0</strong></div>
       </div>
 
     </div>
-
   </div><!-- /panels -->
 </div><!-- /page -->
 
@@ -1510,8 +1541,9 @@ let dashPauseTimer    = null;
 let dashKalshiInterval = null;
 
 function dashStartKalshiInterval() {
-  if (dashKalshiInterval) clearInterval(dashKalshiInterval);
-  dashKalshiInterval = dashStartKalshiInterval(); // managed by pause system
+  // Kalshi match polling removed from Event Dashboard (see Market Dashboard)
+  // Function kept as stub for pause system compatibility
+  if (dashKalshiInterval) { clearInterval(dashKalshiInterval); dashKalshiInterval = null; }
 }
 
 function dashTogglePause() {
@@ -1782,10 +1814,13 @@ function renderPost(p) {
     ? `<img src="${esc(p.author_avatar)}" alt="" onerror="this.style.display='none'">`
     : initials;
 
+  // Noise filtering — search feed only; priority posts bypass scoring
+  const bucket = p.noise_bucket || 'clean';
+  if (bucket === 'hide') return '';   // hard filter — don't render
+
   let badgeClass = '', badgeText = '';
   if (priority && brk)    { badgeClass = 'priority'; badgeText = '★ Breaking'; }
   else if (brk)           { badgeClass = 'breaking'; badgeText = 'Breaking'; }
-  // No badge if plain news-account post or untagged search result — feed name suppressed
 
   const mainBadge = badgeText
     ? `<div class="feed-badge ${badgeClass}">${badgeText}</div>`
@@ -1795,7 +1830,17 @@ function renderPost(p) {
     ? `<div class="feed-badge repeat" title="Similar post seen in last 4 hours">↻ repeat</div>`
     : '';
 
-  return `<div class="feed-item">
+  const mediaBadge = p.has_media
+    ? `<div class="feed-badge media" title="Post contains ${p.media_type || 'media'}">${p.media_type === 'video' ? '▶ video' : '🖼 image'}</div>`
+    : '';
+
+  const noiseBadge = (bucket === 'dim' && !priority)
+    ? `<div class="feed-badge noise" title="Low signal: ${esc((p.noise_reasons||[]).join(', '))}">⚠ dim</div>`
+    : '';
+
+  const dimClass = (bucket === 'dim' && !priority) ? ' noise-dim' : '';
+
+  return `<div class="feed-item${dimClass}">
     <div class="feed-top">
       <div class="feed-avatar">${avatar}</div>
       <div class="feed-author">
@@ -1805,16 +1850,20 @@ function renderPost(p) {
       <div class="feed-time">${relTime(p.created_at)}</div>
       ${mainBadge}
       ${dupeBadge}
+      ${mediaBadge}
+      ${noiseBadge}
     </div>
-    <div class="feed-text">${esc((p.text || '').slice(0, 260))}</div>
+    <div class="feed-text">${esc(p.text || '')}</div>
     <div class="feed-stats">
       <div class="feed-stat">♥ ${p.like_count || 0}</div>
       <div class="feed-stat">↺ ${p.repost_count || 0}</div>
       <div class="feed-stat">💬 ${p.reply_count || 0}</div>
+      ${(!priority && (p.noise_score ?? 0) > 0) ? `<div class="feed-stat feed-noise-score" title="Noise score: ${p.noise_score} · ${(p.noise_reasons||[]).join(', ')}">noise ${p.noise_score}</div>` : ''}
       <a href="${esc(p.url)}" target="_blank" class="feed-link">↗ bsky</a>
     </div>
   </div>`;
 }
+
 
 // ── Event render ──────────────────────────────────────
 function renderEventPosts(posts) {
@@ -1894,22 +1943,25 @@ async function fetchPosts() {
     const pbody  = document.getElementById('news-body');
     const pempty = document.getElementById('news-empty');
     if (pempty) pempty.remove();
-    pbody.insertAdjacentHTML('afterbegin', newPriority.map(renderPost).join(''));
+    pbody.insertAdjacentHTML('afterbegin', newPriority.map(renderPost).filter(Boolean).join(''));
     pbody.querySelectorAll('.feed-item').forEach((el, i) => { if (i >= 40) el.remove(); });
   }
 
-  // Search half
+  // Search half (Panel 1 bottom)
   if (newSearch.length) {
     const sbody = document.getElementById('search-body');
-    sbody.insertAdjacentHTML('afterbegin', newSearch.map(renderPost).join(''));
+    sbody.insertAdjacentHTML('afterbegin', newSearch.map(renderPost).filter(Boolean).join(''));
     sbody.querySelectorAll('.feed-item').forEach((el, i) => { if (i >= 40) el.remove(); });
+
+    // Panel 3: full Search Feed with live noise threshold
+    sf3IngestPosts(newSearch);
   }
 
   const totalPriority = posts.filter(p => p.is_news_account).length;
   const totalSearch   = posts.filter(p => !p.is_news_account).length;
-  document.getElementById('news-count').textContent = totalPriority + ' posts';
+  // news-count merged into panel feed-count
   document.getElementById('search-count').textContent   = totalSearch   + ' posts';
-  document.getElementById('feed-count').textContent     = posts.length  + ' posts';
+  document.getElementById('feed-count').textContent = totalPriority + ' posts';
   document.getElementById('feed-status').textContent    = d.status || 'live';
   if (d.last_updated) document.getElementById('feed-updated').textContent = relTime(d.last_updated);
 }
@@ -2062,6 +2114,102 @@ fetchMarkets();
 setInterval(fetchMarkets, 60000);
 setInterval(renderSpikeBar, 30000);
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PANEL 3: SEARCH FEED
+// ══════════════════════════════════════════════════════════════════════════════
+
+let sf3HideThreshold = 5;   // noise_score >= this → hidden
+let sf3DimThreshold  = 3;   // noise_score >= this → dimmed
+
+function sf3UpdateThreshold() {
+  const slider = document.getElementById('sf3-threshold');
+  if (!slider) return;
+  sf3HideThreshold = parseInt(slider.value);
+  sf3DimThreshold  = Math.max(1, sf3HideThreshold - 2);
+
+  // Update fill bar (slider range 3–10)
+  const fill = document.getElementById('sf3-slider-fill');
+  if (fill) fill.style.width = ((sf3HideThreshold - 3) / 7 * 100) + '%';
+
+  // Update label and hint
+  const lbl  = document.getElementById('sf3-threshold-label');
+  const hint = document.getElementById('sf3-filter-hint');
+  if (lbl)  lbl.textContent  = sf3HideThreshold;
+  if (hint) hint.textContent = `hide ≥${sf3HideThreshold} · dim ≥${sf3DimThreshold}`;
+
+  // Re-render all current posts with new threshold
+  sf3Rerender();
+}
+
+// Store all search posts in memory so we can re-render on threshold change
+let sf3AllPosts = [];
+
+function sf3Rerender() {
+  const body = document.getElementById('sf3-body');
+  if (!body) return;
+
+  body.innerHTML = '';
+  let shown = 0, hidden = 0, dimmed = 0;
+
+  const empty = document.getElementById('sf3-empty');
+  if (sf3AllPosts.length === 0) {
+    body.innerHTML = '<div class="state-empty" id="sf3-empty">Waiting for search feed…</div>';
+    sf3UpdateStats(0, 0, 0);
+    return;
+  }
+
+  for (const p of sf3AllPosts) {
+    const score  = p.noise_score  ?? 0;
+    const bucket = score >= sf3HideThreshold ? 'hide'
+                 : score >= sf3DimThreshold  ? 'dim'
+                 : 'clean';
+    // Override the post's stored bucket with the live threshold
+    const pWithBucket = Object.assign({}, p, { noise_bucket: bucket });
+    const html = renderPost(pWithBucket);
+    if (!html) { hidden++; continue; }
+    body.insertAdjacentHTML('beforeend', html);
+    if (bucket === 'dim') dimmed++;
+    else shown++;
+  }
+
+  sf3UpdateStats(shown, hidden, dimmed);
+  const countEl = document.getElementById('sf3-count');
+  if (countEl) countEl.textContent = sf3AllPosts.length + ' posts';
+}
+
+function sf3UpdateStats(shown, hidden, dimmed) {
+  const s = document.getElementById('sf3-shown');
+  const h = document.getElementById('sf3-hidden');
+  const d = document.getElementById('sf3-dimmed');
+  if (s) s.textContent = shown;
+  if (h) h.textContent = hidden;
+  if (d) d.textContent = dimmed;
+}
+
+function sf3IngestPosts(newSearchPosts) {
+  // Prepend new posts, cap at 120
+  sf3AllPosts = [...newSearchPosts, ...sf3AllPosts].slice(0, 120);
+  sf3Rerender();
+}
+
+function sf3ToggleTooltip(e) {
+  e.stopPropagation();
+  document.getElementById('sf3-tooltip').classList.toggle('visible');
+  document.getElementById('sf3-kw-tooltip')?.classList.remove('visible');
+}
+function sf3ToggleKeywords(e) {
+  e.stopPropagation();
+  document.getElementById('sf3-kw-tooltip').classList.toggle('visible');
+  document.getElementById('sf3-tooltip')?.classList.remove('visible');
+}
+document.addEventListener('click', function() {
+  document.getElementById('sf3-tooltip')?.classList.remove('visible');
+  document.getElementById('sf3-kw-tooltip')?.classList.remove('visible');
+});
+
+// Init slider fill on load
+sf3UpdateThreshold();
 
 // ══════════════════════════════════════════════════════════════════════════════
 // KALSHI PANEL
@@ -2892,15 +3040,8 @@ async function kManualRefresh() {
   }
 }
 
-// ── Init ───────────────────────────────────────────────────────────────────────
-kUpdatePriceRange();
-kUpdateDaysRange();
-kUpdateConfidence();
-kLoadSeries();
-// Run match in background always — results ready when tab is opened
-dashStartKalshiInterval(); // managed by pause system
-// Also run once at startup after a short delay so corpus warms up
-setTimeout(() => { kFetchMatch(); }, 8000);
+// ── Init (Kalshi removed from Event Dashboard — see Market Dashboard) ─────────
+// kLoadSeries / kFetchMatch / kUpdatePriceRange intentionally not called here
 
 // ── Debug overlay (Shift+D) ────────────────────────────────────────────────────
 const _debugOverlay = document.createElement('div');
@@ -2961,30 +3102,7 @@ document.addEventListener('keydown', e => {
   if (e.shiftKey && e.key === 'D') showDebug();
 });
 
-// ── Startup status poller ──────────────────────────────────────────────────────
-(async function kPollUntilReady() {
-  const INTERVAL = 3000;
-  const MAX_WAIT = 5 * 60 * 1000;
-  const started  = Date.now();
-  try {
-    const r = await fetch(KALSHI_API + '/status');
-    const s = await r.json();
-    kSetStatus(s.status, s);
-    if (s.status !== 'fetching' && s.status !== 'initializing') return;
-  } catch(e) { return; }
-  const timer = setInterval(async () => {
-    if (Date.now() - started > MAX_WAIT) { clearInterval(timer); return; }
-    try {
-      const r = await fetch(KALSHI_API + '/status');
-      const s = await r.json();
-      kSetStatus(s.status, s);  // kSetStatus will call kLoadSeries if series ready
-      if (s.status === 'ok' || s.status === 'error') {
-        clearInterval(timer);
-        kLoadSeries();  // always reload on completion regardless of ok/error
-      }
-    } catch(e) { clearInterval(timer); }
-  }, INTERVAL);
-})();
+// Kalshi startup poller removed — not needed on Event Dashboard
 
 </script>
 

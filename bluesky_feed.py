@@ -20,6 +20,8 @@ import time
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
+from post_scorer import get_scorer as _get_scorer
+_scorer = _get_scorer()
 
 load_dotenv()
 
@@ -32,28 +34,70 @@ ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__), "accounts.txt")
 
 # ─── Feed Configuration (add/remove feeds here) ───────────────────────────────
 FEED_CONFIG = [
+    # ── High-signal wire/alert phrases ───────────────────────────────────────
     {
-        'id':      'breaking_news',
-        'name':    'Breaking News',
+        'id':      'breaking',
+        'name':    'Breaking',
         'type':    'search',
-        'query':   'breaking news',
-        'limit':   25,
+        'query':   'breaking',
+        'limit':   30,
         'enabled': True,
     },
     {
-        'id':      'world_news',
-        'name':    'World News',
+        'id':      'just_in',
+        'name':    'Just In',
         'type':    'search',
-        'query':   'breaking world news',
+        'query':   'just in',
         'limit':   20,
         'enabled': True,
     },
     {
-        'id':      'urgent',
-        'name':    'Urgent Reports',
+        'id':      'developing',
+        'name':    'Developing',
         'type':    'search',
-        'query':   'urgent developing story',
+        'query':   'developing story',
+        'limit':   20,
+        'enabled': True,
+    },
+    {
+        'id':      'flash',
+        'name':    'Flash/Alert',
+        'type':    'search',
+        'query':   'flash alert',
         'limit':   15,
+        'enabled': True,
+    },
+    # ── Event-type keywords ───────────────────────────────────────────────────
+    {
+        'id':      'explosion',
+        'name':    'Explosion/Attack',
+        'type':    'search',
+        'query':   'explosion attack strike',
+        'limit':   20,
+        'enabled': True,
+    },
+    {
+        'id':      'earthquake',
+        'name':    'Natural Disaster',
+        'type':    'search',
+        'query':   'earthquake hurricane tornado wildfire',
+        'limit':   20,
+        'enabled': True,
+    },
+    {
+        'id':      'markets',
+        'name':    'Markets/Economy',
+        'type':    'search',
+        'query':   'market crash rate hike fed reserve',
+        'limit':   20,
+        'enabled': True,
+    },
+    {
+        'id':      'geopolitical',
+        'name':    'Geopolitical',
+        'type':    'search',
+        'query':   'missile launches troops invasion sanctions',
+        'limit':   20,
         'enabled': True,
     },
 ]
@@ -195,10 +239,15 @@ class BlueSkyFeedManager:
                 new_posts.append(self._normalize_post(raw_post, feed))
 
         if new_posts:
+            # Score the full batch — enables F13 repeated-handle detection
+            _scorer.score_batch(new_posts)
             self._cache = (new_posts + self._cache)[:MAX_CACHED_POSTS]
             self.last_updated = datetime.now(timezone.utc).isoformat()
             self.status = "live"
-            print(f"[BlueSky] Fetched {len(new_posts)} new posts. Cache: {len(self._cache)}")
+            hidden  = sum(1 for p in new_posts if p.get('noise_bucket') == 'hide')
+            dimmed  = sum(1 for p in new_posts if p.get('noise_bucket') == 'dim')
+            print(f"[BlueSky] Fetched {len(new_posts)} new posts "
+                  f"(hide={hidden} dim={dimmed}). Cache: {len(self._cache)}")
 
         return new_posts
 
@@ -232,25 +281,77 @@ class BlueSkyFeedManager:
         record  = raw.get('record', {})
         handle          = author.get('handle', 'unknown').lower()
         is_news_account = handle in self.priority_handles
-        return {
-            'uri':             raw.get('uri', ''),
-            'cid':             raw.get('cid', ''),
-            'feed_id':         feed['id'],
-            'feed_name':       feed['name'],
-            'author_handle':   handle,
-            'author_display':  author.get('displayName', author.get('handle', 'Unknown')),
-            'author_avatar':   author.get('avatar', ''),
-            'text':            record.get('text', ''),
-            'created_at':      record.get('createdAt', ''),
-            'indexed_at':      raw.get('indexedAt', ''),
-            'like_count':      raw.get('likeCount', 0),
-            'repost_count':    raw.get('repostCount', 0),
-            'reply_count':     raw.get('replyCount', 0),
-            'url':             f"https://bsky.app/profile/{handle}/post/{raw.get('uri', '').split('/')[-1]}",
-            'fetched_at':      datetime.now(timezone.utc).isoformat(),
-            'is_news_account': is_news_account,
-            'weight':          1,
+
+        # ── Extract fields needed by post_scorer ──────────────────────────────
+        # author.createdAt: account age (F2)
+        author_created_at = author.get('createdAt', '')
+
+        # record.facets: hashtag count (F3) + reply detection (F6)
+        facets    = record.get('facets', []) or []
+        tag_count = sum(
+            1 for f in facets
+            for feat in (f.get('features') or [])
+            if feat.get('$type') == 'app.bsky.richtext.facet#tag'
+        )
+        mention_count = sum(
+            1 for f in facets
+            for feat in (f.get('features') or [])
+            if feat.get('$type') == 'app.bsky.richtext.facet#mention'
+        )
+        is_reply  = bool(record.get('reply'))   # reply-to field present
+
+        # record.langs: language filter (F7)
+        langs = record.get('langs') or []
+
+        # record.embed: media detection
+        embed      = record.get('embed') or {}
+        embed_type = embed.get('$type', '')
+        if 'images' in embed_type:
+            media_type = 'image'
+        elif 'video' in embed_type:
+            media_type = 'video'
+        elif 'recordWithMedia' in embed_type:
+            # Quote post that also contains media — check nested
+            inner = (embed.get('media') or {}).get('$type', '')
+            media_type = 'video' if 'video' in inner else 'image'
+        else:
+            media_type = None
+        has_media = media_type is not None
+
+        post = {
+            'uri':               raw.get('uri', ''),
+            'cid':               raw.get('cid', ''),
+            'feed_id':           feed['id'],
+            'feed_name':         feed['name'],
+            'author_handle':     handle,
+            'author_display':    author.get('displayName', author.get('handle', 'Unknown')),
+            'author_avatar':     author.get('avatar', ''),
+            'author_created_at': author_created_at,
+            'text':              record.get('text', ''),
+            'created_at':        record.get('createdAt', ''),
+            'indexed_at':        raw.get('indexedAt', ''),
+            'like_count':        raw.get('likeCount', 0),
+            'repost_count':      raw.get('repostCount', 0),
+            'reply_count':       raw.get('replyCount', 0),
+            'tag_count':         tag_count,
+            'mention_count':     mention_count,
+            'is_reply':          is_reply,
+            'langs':             langs,
+            'url':               f"https://bsky.app/profile/{handle}/post/{raw.get('uri', '').split('/')[-1]}",
+            'fetched_at':        datetime.now(timezone.utc).isoformat(),
+            'is_news_account':   is_news_account,
+            'has_media':         has_media,
+            'media_type':        media_type,
+            'weight':            1,
         }
+
+        # Noise scoring applied in score_batch after all posts collected
+        # (enables F13 repeated-handle detection across the batch)
+        post['noise_score']   = 0
+        post['noise_bucket']  = 'clean'
+        post['noise_reasons'] = []
+
+        return post
 
     # ── Cache access ───────────────────────────────────────────────────────────
 

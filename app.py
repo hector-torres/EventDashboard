@@ -38,6 +38,7 @@ def poll_feeds():
                 event_detector.analyze(posts)
         except Exception as e:
             print(f"[Poll Error] {e}")
+            feed_manager.status = f"error — retrying"
         time.sleep(30)
 
 def poll_markets():

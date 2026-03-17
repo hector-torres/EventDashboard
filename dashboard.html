@@ -39,14 +39,14 @@
       display: flex; align-items: stretch; margin-left: 24px; gap: 0;
     }
     .title-bar-nav a {
-      font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+      font-size: 12px; font-weight: 400; letter-spacing: 0.16em;
       text-transform: uppercase; text-decoration: none;
-      color: #444; padding: 0 14px;
+      color: #ffffff; padding: 0 14px;
       display: flex; align-items: center;
       border-bottom: 2px solid transparent;
       transition: color 0.15s, border-color 0.15s;
     }
-    .title-bar-nav a:hover { color: #888; }
+    .title-bar-nav a:hover { color: #ffffff; }
     .title-bar-nav a.active { color: #4477dd; border-bottom-color: #4477dd; }
 
     .title-bar-text {
@@ -63,7 +63,7 @@
       font-size: 13px;
       font-weight: 400;
       letter-spacing: 0.1em;
-      color: #505050;
+      color: #888888;
     }
 
     .accent-line {
@@ -105,7 +105,7 @@
       font-size: 9px;
       font-weight: 700;
       letter-spacing: 0.25em;
-      color: #444;
+      color: #777;
       text-transform: uppercase;
       white-space: nowrap;
       text-align: center;
@@ -165,13 +165,13 @@
       font-weight: 600;
       letter-spacing: 0.2em;
       text-transform: uppercase;
-      color: #2e2e2e;
+      color: #666666;
       margin-bottom: 3px;
     }
 
     .market-updated-time {
       font-size: 10px;
-      color: #3a3a3a;
+      color: #888888;
       letter-spacing: 0.05em;
       font-variant-numeric: tabular-nums;
     }
@@ -221,9 +221,9 @@
       padding: 1px 5px;
     }
 
-    .status-open    { color: #2a7a2a; background: rgba(30,100,30,0.15); border: 1px solid rgba(30,100,30,0.25); }
-    .status-closed  { color: #555;    background: #141414;               border: 1px solid #1e1e1e; }
-    .status-futures { color: #886633; background: rgba(120,90,30,0.15); border: 1px solid rgba(120,90,30,0.25); }
+    .status-open    { color: #4aaa4a; background: rgba(30,100,30,0.20); border: 1px solid rgba(30,100,30,0.35); }
+    .status-closed  { color: #888;    background: #141414;               border: 1px solid #2a2a2a; }
+    .status-futures { color: #bb8844; background: rgba(120,90,30,0.20); border: 1px solid rgba(120,90,30,0.35); }
 
     .tile-price {
       font-size: 13px;
@@ -232,12 +232,12 @@
       font-variant-numeric: tabular-nums;
       line-height: 1;
       margin: 2px 0;
-      opacity: 0.7;
+      opacity: 1;
     }
 
-    .tile-price.up   { color: #3a9e3a; }
-    .tile-price.down { color: #cc2200; }
-    .tile-price.flat { color: #aaa; }
+    .tile-price.up   { color: #4ab84a; }
+    .tile-price.down { color: #dd3300; }
+    .tile-price.flat { color: #bbb; }
 
     .tile-change {
       font-size: 22px;
@@ -246,9 +246,9 @@
       letter-spacing: -0.02em;
       line-height: 1;
     }
-    .tile-change.up   { color: #2d7a2d; }
-    .tile-change.down { color: #aa1a00; }
-    .tile-change.flat { color: #888; }
+    .tile-change.up   { color: #3daa3d; }
+    .tile-change.down { color: #cc3300; }
+    .tile-change.flat { color: #999; }
 
     .tile-meta {
       display: flex;
@@ -260,7 +260,7 @@
 
     .tile-meta-item {
       font-size: 10px;
-      color: #666;
+      color: #888;
       letter-spacing: 0.04em;
       white-space: nowrap;
     }
@@ -269,7 +269,7 @@
 
     .tile-time {
       font-size: 9px;
-      color: #666;
+      color: #888;
       letter-spacing: 0.06em;
       margin-top: 3px;
     }
@@ -393,15 +393,16 @@
       font-weight: 700;
       letter-spacing: 0.28em;
       text-transform: uppercase;
+      color: #cccccc;
     }
 
     .panel-count {
       font-size: 11px;
       font-weight: 400;
       letter-spacing: 0.1em;
-      color: #3a3a3a;
-      background: #141414;
-      border: 1px solid #1e1e1e;
+      color: #888888;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
       padding: 2px 8px;
     }
 
@@ -411,7 +412,7 @@
       font-size: 11px;
       font-weight: 400;
       letter-spacing: 0.12em;
-      color: #444;
+      color: #888888;
     }
 
     .live-dot {
@@ -428,16 +429,16 @@
       font-weight: 500;
       letter-spacing: 0.15em;
       text-transform: uppercase;
-      color: #444;
+      color: #888888;
       background: none;
-      border: 1px solid #222;
+      border: 1px solid #333333;
       padding: 3px 10px;
       cursor: pointer;
       font-family: inherit;
       transition: all 0.15s;
     }
 
-    .panel-btn:hover { color: #888; border-color: #444; }
+    .panel-btn:hover { color: #cccccc; border-color: #666; }
 
     /* ── Keyword spike chip bar ──────────────────────── */
     .spike-bar {
@@ -535,7 +536,7 @@
       font-size: 11px;
       font-weight: 400;
       letter-spacing: 0.08em;
-      color: #383838;
+      color: #666666;
     }
 
     .footer-stat strong { color: #555; font-weight: 600; }
@@ -1332,7 +1333,7 @@
       <div class="panel-header">
         <div class="panel-title-group">
           <div class="panel-bar" style="background:#8b0000"></div>
-          <div class="panel-title" style="color:#aa2200">News Accounts</div>
+          <div class="panel-title" style="color:#dd3300">News Accounts</div>
           <div class="panel-count" id="feed-count">0 posts</div>
         </div>
         <div class="panel-right">
@@ -1370,7 +1371,7 @@
       <div class="panel-header">
         <div class="panel-title-group">
           <div class="panel-bar" style="background:#8b4400"></div>
-          <div class="panel-title" style="color:#aa5500">Detected Events</div>
+          <div class="panel-title" style="color:#dd6600">Detected Events</div>
           <div class="panel-count" id="events-count">0 events</div>
         </div>
         <div class="panel-right">
@@ -1399,7 +1400,7 @@
       <div class="panel-header" style="position:relative">
         <div class="panel-title-group">
           <div class="panel-bar" style="background:#8b0000"></div>
-          <div class="panel-title" style="color:#aa2200;display:flex;align-items:center;gap:5px">
+          <div class="panel-title" style="color:#dd3300;display:flex;align-items:center;gap:5px">
             Keyword Sweep
             <span class="sf3-kw-btn" id="sf3-kw-btn" onclick="sf3ToggleKeywords(event)">ⓘ</span>
             <div class="sf3-kw-tooltip" id="sf3-kw-tooltip">
@@ -1960,7 +1961,6 @@ async function fetchPosts() {
   const totalPriority = posts.filter(p => p.is_news_account).length;
   const totalSearch   = posts.filter(p => !p.is_news_account).length;
   // news-count merged into panel feed-count
-  document.getElementById('search-count').textContent   = totalSearch   + ' posts';
   document.getElementById('feed-count').textContent = totalPriority + ' posts';
   document.getElementById('feed-status').textContent    = d.status || 'live';
   if (d.last_updated) document.getElementById('feed-updated').textContent = relTime(d.last_updated);

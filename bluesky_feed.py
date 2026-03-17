@@ -242,12 +242,15 @@ class BlueSkyFeedManager:
             # Score the full batch — enables F13 repeated-handle detection
             _scorer.score_batch(new_posts)
             self._cache = (new_posts + self._cache)[:MAX_CACHED_POSTS]
-            self.last_updated = datetime.now(timezone.utc).isoformat()
-            self.status = "live"
-            hidden  = sum(1 for p in new_posts if p.get('noise_bucket') == 'hide')
-            dimmed  = sum(1 for p in new_posts if p.get('noise_bucket') == 'dim')
+            hidden = sum(1 for p in new_posts if p.get('noise_bucket') == 'hide')
+            dimmed = sum(1 for p in new_posts if p.get('noise_bucket') == 'dim')
             print(f"[BlueSky] Fetched {len(new_posts)} new posts "
                   f"(hide={hidden} dim={dimmed}). Cache: {len(self._cache)}")
+
+        # Always mark live + update timestamp after a successful fetch
+        # (even if no new posts — all seen_uris already cached)
+        self.last_updated = datetime.now(timezone.utc).isoformat()
+        self.status = "live"
 
         return new_posts
 

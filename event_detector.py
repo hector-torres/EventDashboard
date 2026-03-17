@@ -24,6 +24,15 @@ from typing import List, Dict, Optional
 import re
 import uuid
 
+# NLP enhancement layer (spaCy optional — degrades gracefully without it)
+try:
+    from nlp_enhancer import get_enhancer as _get_nlp
+    _nlp = _get_nlp()
+    print(f"[EventDetector] NLP enhancer loaded: {_nlp.describe()}")
+except ImportError:
+    _nlp = None
+    print("[EventDetector] nlp_enhancer not found — NLP features disabled")
+
 # ─── Breaking News Keywords ──────────────────────────────────────────────────
 BREAKING_KEYWORDS = {
     'CRITICAL': {
@@ -168,11 +177,19 @@ def _check_entity_patterns(text: str):
     """
     Check for named entity co-occurrence patterns.
     Returns (severity, description) or (None, None).
+
+    Uses NLP enhancer (spaCy or regex fallback) when available.
+    Falls back to the original country/verb word-list approach otherwise.
     """
+    if _nlp is not None:
+        sev, kw = _nlp.entity_severity_check(text, None, None)
+        if sev:
+            return sev, kw
+
+    # Legacy word-list fallback (always runs if NLP disabled)
     wlist = re.findall(r'\b\w+\b', text.lower())
     words = set(wlist)
 
-    # Country co-occurrence check
     matched_country = None
     for country in COUNTRY_NAMES:
         if ' ' in country:
@@ -191,7 +208,6 @@ def _check_entity_patterns(text: str):
             verb = next(iter(words & GEO_ACTION_VERBS_MEDIUM))
             return 'MEDIUM', f'geo:{matched_country}+{verb}'
 
-    # Person title + HIGH verb
     matched_title = words & PERSON_TITLES
     if matched_title and (words & PERSON_ACTION_VERBS_HIGH):
         title = next(iter(matched_title))
@@ -263,6 +279,10 @@ class KeywordClusterStrategy(DetectionStrategy):
                     severity, matched_kw = ent_sev, ent_kw
 
             if severity and matched_kw:
+                # Negation check: skip if keyword is negated in context
+                if _nlp is not None and _nlp.is_negated(raw_text, matched_kw):
+                    continue
+
                 key = matched_kw.lower().replace(' ', '_')
                 clusters[key].append({
                     'post':     post,
@@ -280,7 +300,13 @@ class KeywordClusterStrategy(DetectionStrategy):
                 continue
             if topic_key in existing_topics:
                 continue
-            if self._too_similar_to_existing(topic_key, existing_events):
+            # Phase 3: semantic similarity check (upgrades stem-overlap when ST installed)
+            if _nlp is not None:
+                title_preview = f"{cluster[0]['keyword']} — {len(cluster)} posts"
+                is_dup, sim = _nlp.is_duplicate_event(title_preview, topic_key)
+                if is_dup:
+                    continue
+            elif self._too_similar_to_existing(topic_key, existing_events):
                 continue
             # Also dedup within this batch of new events
             if self._too_similar_to_existing(topic_key, new_events):
@@ -305,10 +331,15 @@ class KeywordClusterStrategy(DetectionStrategy):
                 for c in sorted_c
             ]
 
+            generated_title = self._generate_title(keyword, sorted_c, total_weight)
+            # Phase 3: register in semantic dedup buffer
+            if _nlp is not None:
+                _nlp.register_event(generated_title, topic_key)
+
             new_events.append({
                 'id':               str(uuid.uuid4())[:8],
                 'topic_key':        topic_key,
-                'title':            self._generate_title(keyword, sorted_c, total_weight),
+                'title':            generated_title,
                 'severity':         severity,
                 'post_count':       len(cluster),
                 'weighted_count':   total_weight,
@@ -506,6 +537,125 @@ def _compute_event_status(detected_at_iso: str) -> str:
         return 'active'
 
 
+# ─── Phase 4: Zero-shot Detection Strategy ───────────────────────────────────
+
+class ZeroShotStrategy(DetectionStrategy):
+    """
+    Phase 4: Detect events that contain no keyword match but have a named entity
+    plus a high-confidence zero-shot category classification.
+
+    Only active when sentence-transformers is installed and model is loaded.
+    Produces MEDIUM events tagged with the classified category.
+    Skips posts already captured by KeywordClusterStrategy.
+    """
+    name = "zero_shot"
+
+    def analyze(self, posts: List[Dict], existing_events: List[Dict]) -> List[Dict]:
+        if _nlp is None or not _nlp.zero_shot_enabled():
+            return []
+
+        new_events = []
+        existing_topics = {e.get('topic_key') for e in existing_events}
+
+        # Collect posts that have a named entity but no keyword match
+        # Group them by zero-shot category within a sliding window
+        from collections import defaultdict
+        category_posts: Dict[str, List] = defaultdict(list)
+
+        for post in posts:
+            raw_text = post.get('text', '')
+            # Skip if already matched by keyword strategies
+            # (check by seeing if this exact post is in existing events' posts)
+            entities = _nlp.extract_entities(raw_text)
+            if not entities:
+                continue  # require at least one named entity
+
+            result = _nlp.classify_post(raw_text)
+            if result is None:
+                continue
+
+            cat_key, confidence = result
+            if confidence < ZERO_SHOT_MIN_SCORE:
+                continue
+
+            weight = max(
+                post.get('weight', 1),
+                _get_source_weight(post.get('author_handle', ''))
+            )
+            category_posts[cat_key].append({
+                'post':       post,
+                'confidence': confidence,
+                'entities':   entities,
+                'weight':     weight,
+            })
+
+        for cat_key, cluster in category_posts.items():
+            total_weight = sum(c['weight'] for c in cluster)
+            if total_weight < CLUSTER_THRESHOLD:
+                continue
+
+            topic_key = f'zs_{cat_key}'
+            if topic_key in existing_topics:
+                continue
+
+            # Require at least one news account or weight ≥ 5 to avoid noise
+            has_news    = any(c['post'].get('is_news_account') for c in cluster)
+            high_weight = any(c['weight'] >= 3 for c in cluster)
+            if not (has_news or high_weight):
+                continue
+
+            sorted_c     = sorted(cluster, key=lambda c: c['confidence'], reverse=True)
+            best_conf    = sorted_c[0]['confidence']
+            best_ents    = sorted_c[0]['entities']
+            entity_str   = best_ents[0]['text'] if best_ents else cat_key
+            sample_texts = [c['post']['text'][:120] for c in sorted_c[:3]]
+
+            full_posts = [
+                {
+                    'handle':  c['post'].get('author_handle', ''),
+                    'display': c['post'].get('author_display', ''),
+                    'text':    c['post'].get('text', ''),
+                    'url':     c['post'].get('url', ''),
+                    'ts':      c['post'].get('indexed_at', c['post'].get('created_at', '')),
+                    'is_news': c['post'].get('is_news_account', False),
+                }
+                for c in sorted_c
+            ]
+
+            cat_display = cat_key.replace('_', ' ').title()
+            title = (f"[{cat_display}] {entity_str} — "
+                     f"{len(cluster)} posts (conf {best_conf:.2f})")
+
+            if _nlp is not None:
+                _nlp.register_event(title, topic_key)
+
+            new_events.append({
+                'id':               str(uuid.uuid4())[:8],
+                'topic_key':        topic_key,
+                'title':            title,
+                'severity':         'MEDIUM',
+                'post_count':       len(cluster),
+                'weighted_count':   total_weight,
+                'keyword':          cat_key,
+                'category':         cat_display,
+                'zero_shot_conf':   round(best_conf, 3),
+                'sample_posts':     sample_texts,
+                'posts':            full_posts,
+                'sources':          list({c['post']['author_handle'] for c in cluster[:5]}),
+                'priority_sources': [c['post']['author_handle']
+                                     for c in cluster if c['post'].get('is_news_account')],
+                'detected_at':      datetime.now(timezone.utc).isoformat(),
+                'strategy':         self.name,
+                'status':           'breaking',
+            })
+
+        return new_events
+
+
+# Expose threshold so ZeroShotStrategy can reference it
+ZERO_SHOT_MIN_SCORE = 0.30   # matches nlp_enhancer.ZERO_SHOT_MIN_SCORE
+
+
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
 
 class EventDetector:
@@ -513,6 +663,7 @@ class EventDetector:
         self.strategies: List[DetectionStrategy] = [
             KeywordClusterStrategy(),
             VelocitySpikeStrategy(),
+            ZeroShotStrategy(),     # Phase 4: auto-disabled when ST not installed
         ]
         self._events: List[Dict] = []
 

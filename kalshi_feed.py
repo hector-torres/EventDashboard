@@ -232,7 +232,12 @@ def _load_cache(path: str) -> Optional[List[Dict]]:
 def _save_cache(path: str, data) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(path, 'w') as f:
-        json.dump(data, f)
+        # Strip computed _tok frozensets — they are rebuilt on load
+        if isinstance(data, list):
+            clean = [{k: v for k, v in m.items() if k != '_tok'} for m in data]
+        else:
+            clean = data
+        json.dump(clean, f)
 
 
 def _fetch_series() -> tuple:

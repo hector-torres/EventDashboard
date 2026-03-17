@@ -1134,7 +1134,7 @@
       gap: 0;
     }
     .mp-title-brand {
-      font-size: 13px; font-weight: 700; letter-spacing: 0.18em;
+      font-size: 16px; font-weight: 700; letter-spacing: 0.16em;
       text-transform: uppercase; color: #e2e2e2; white-space: nowrap;
     }
     .mp-title-nav {
@@ -1244,6 +1244,28 @@
       background: #0b0b0b; flex-shrink: 0;
     }
 
+    /* Shared category pill button — used in all three columns */
+    .mp-cat-pill {
+      font-size: 9px; font-weight: 600; padding: 2px 8px;
+      cursor: pointer; border-radius: 2px;
+      border: 1px solid #222; background: transparent;
+      color: #444; transition: all 0.15s;
+    }
+    .mp-cat-pill.active {
+      border-color: #2a4a99; background: rgba(20,40,120,0.18); color: #4477dd;
+    }
+    .mp-cat-pill.empty {
+      border-color: #1a1a1a; color: #2a2a2a; cursor: default;
+    }
+    .mp-cat-pill:not(.empty):not(.active):hover {
+      border-color: #333; color: #666;
+    }
+    /* Excluded (crossed-out) state for match + strat columns */
+    .mp-cat-pill.excluded {
+      border-color: #222; background: transparent;
+      color: #333; text-decoration: line-through;
+    }
+
     /* ── Strategy col ── */
     .mp-strategy-body {
       flex: 1; overflow-y: auto;
@@ -1261,6 +1283,16 @@
     .strat-tabs {
       display: flex; border-bottom: 1px solid #161616;
       background: #0b0b0b; flex-shrink: 0;
+    }
+
+    /* Spacer rows for column alignment — exact heights of strat-tabs and strat-filter-strip */
+    .mp-col-spacer-tabs {
+      height: 29px; flex-shrink: 0;
+      border-bottom: 1px solid #161616; background: #0b0b0b;
+    }
+    .mp-col-spacer-filter {
+      height: 31px; flex-shrink: 0;
+      border-bottom: 1px solid #141414; background: #0b0b0b;
     }
     .strat-tab {
       flex: 1; padding: 7px 0; text-align: center;
@@ -1436,19 +1468,17 @@
       <a href="/dashboard">Event Dashboard</a>
       <a href="/markets" class="active">Market Dashboard</a>
     </nav>
-    <div class="mp-title-right">KLTT Holdings</div>
+    <div class="mp-title-right" style="display:flex;align-items:center;gap:10px;">
+      <button class="mp-pause-btn" id="mp-pause-btn" onclick="mpTogglePause()">⏸ Pause</button>
+      <button class="mp-refresh-btn" onclick="mpRefresh()">↻ Refresh</button>
+      <span style="color:#777;font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;">KLTT Holdings</span>
+    </div>
   </div>
   <div class="accent-line"></div>
 
   <!-- ── Sub-header ────────────────────────────────────────────────────── -->
-  <div class="mp-subheader">
-    <div class="mp-subheader-label">| Market Dashboard</div>
-    <div class="mp-subheader-status" id="mp-status-txt">Loading…</div>
-    <div class="mp-subheader-right">
-      <button class="mp-pause-btn" id="mp-pause-btn" onclick="mpTogglePause()">⏸ Pause</button>
-      <button class="mp-refresh-btn" onclick="mpRefresh()">↻ Refresh</button>
-    </div>
-  </div>
+  <!-- Market Dashboard sub-header removed — controls moved inline -->
+  <div style="display:none" id="mp-status-txt"></div>
 
   <!-- ── 3-column layout ───────────────────────────────────────────────── -->
   <div class="mp-layout">
@@ -1459,6 +1489,10 @@
         <div class="mp-col-title">All Markets</div>
         <div class="mp-col-meta" id="mp-series-header-lbl">Select a category</div>
       </div>
+
+      <!-- Spacers to align with Expiry column's tabs + filter strip -->
+      <div class="mp-col-spacer-tabs"></div>
+      <div class="mp-col-spacer-filter"></div>
 
       <!-- Category filter pills -->
       <div class="mp-cat-filter-row" id="mp-browse-cat-row" style="flex-shrink:0;">
@@ -1543,13 +1577,16 @@
         <div class="mp-col-meta" id="mp-corpus-lbl"></div>
       </div>
 
+      <!-- Spacer to align with Expiry column's strat-tabs row -->
+      <div class="mp-col-spacer-tabs"></div>
+
       <!-- Confidence + sort -->
       <div class="mp-conf-row">
         <div class="k-filter-label">Confidence</div>
-        <input type="range" class="k-slider" id="mp-conf-slider" min="1" max="99" value="15"
+        <input type="range" class="k-slider" id="mp-conf-slider" min="1" max="99" value="60"
                oninput="mpUpdateConf()"
                style="position:relative;width:90px;pointer-events:all;">
-        <div class="k-filter-value" id="mp-conf-val">&ge; 0.15</div>
+        <div class="k-filter-value" id="mp-conf-val">&ge; 0.60</div>
         <div class="k-slider-divider"></div>
         <div class="k-sort-label">Sort</div>
         <button class="k-sort-btn active" id="mpmsort-conf"      onclick="mpSetMatchSort('conf')">Conf</button>
@@ -1706,7 +1743,14 @@ let mpSearchDebounce = null;
 let mpMatchAll       = [];
 let mpMatchPage      = 1;
 let mpMatchSortMode  = 'conf';
-let mpConfThreshold  = 0.15;
+// Canonical category list — all 13 Kalshi categories, always shown in filter bars
+const CANONICAL_CATS = [
+  'Climate and Weather', 'Companies', 'Crypto', 'Economics',
+  'Elections', 'Entertainment', 'Financials', 'Mentions',
+  'Politics', 'Science and Technology', 'Social', 'Sports', 'World',
+];
+
+let mpConfThreshold  = 0.60;
 let mpExcludedCats   = new Set();
 
 function kRenderMarket(m, showScore) {
@@ -1900,36 +1944,32 @@ function mpBuildBrowseCatPills() {
   if (!row) return;
   const counts = {};
   for (const s of mpAllSeries) counts[s.category || 'Other'] = (counts[s.category || 'Other'] || 0) + 1;
-  const cats = Object.keys(counts).sort();
 
   row.innerHTML = '<span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444;flex-shrink:0;">Category</span>';
 
   // "All" pill
-  const allBtn = document.createElement('button');
   const isAll = !mpActiveCategory;
-  allBtn.style.cssText = `font-size:9px;font-weight:600;padding:2px 8px;cursor:pointer;border-radius:2px;
-    border:1px solid ${isAll?'#2a4a99':'#222'};background:${isAll?'rgba(20,40,120,0.18)':'transparent'};
-    color:${isAll?'#4477dd':'#444'};transition:all 0.15s;`;
+  const allBtn = document.createElement('button');
+  allBtn.className = 'mp-cat-pill' + (isAll ? ' active' : '');
   allBtn.textContent = 'All';
   allBtn.onclick = () => {
     mpActiveCategory = '';
-    mpActiveSeries = null;
-    mpCurrentPage = 1;
+    mpActiveSeries   = null;
+    mpCurrentPage    = 1;
     document.querySelectorAll('#mp-cat-list .k-cat-row').forEach(r => r.classList.remove('active'));
     document.getElementById('mp-series-header').textContent = 'All Series';
     document.getElementById('mp-series-header-lbl').textContent = 'All categories';
-    // Populate series list with all series sorted alphabetically
     const col = document.getElementById('mp-series-list');
     col.innerHTML = '';
     const allSorted = [...mpAllSeries].sort((a,b) => (a.title||a.ticker).localeCompare(b.title||b.ticker));
     for (const s of allSorted) {
-      const row = document.createElement('div');
-      row.className = 'k-series-row';
-      row.dataset.ticker = s.ticker;
-      row.innerHTML = `<div class="k-series-title">${s.title || s.ticker}</div>
-        <div class="k-series-meta">${s.ticker} <span class="k-meta-tag">${s.category||''}</span></div>`;
-      row.onclick = () => mpSelectSeries(s.ticker, row);
-      col.appendChild(row);
+      const r = document.createElement('div');
+      r.className = 'k-series-row';
+      r.dataset.ticker = s.ticker;
+      r.innerHTML = `<div class="k-series-title">${s.title || s.ticker}</div>
+        <div class="k-series-meta">${s.ticker}</div>`;
+      r.onclick = () => mpSelectSeries(s.ticker, r);
+      col.appendChild(r);
     }
     document.getElementById('mp-market-body').innerHTML =
       '<div style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
@@ -1937,197 +1977,42 @@ function mpBuildBrowseCatPills() {
   };
   row.appendChild(allBtn);
 
-  for (const cat of cats) {
-    const active = mpActiveCategory === cat;
+  // One pill per canonical category — always show all 13
+  for (const cat of CANONICAL_CATS) {
+    const count    = counts[cat] || 0;
+    const isActive = mpActiveCategory === cat;
+    const isEmpty  = count === 0;
     const btn = document.createElement('button');
-    btn.style.cssText = `font-size:9px;font-weight:600;padding:2px 8px;cursor:pointer;border-radius:2px;
-      border:1px solid ${active?'#2a4a99':'#222'};background:${active?'rgba(20,40,120,0.18)':'transparent'};
-      color:${active?'#4477dd':'#444'};transition:all 0.15s;`;
-    btn.textContent = `${cat} (${counts[cat]})`;
-    btn.onclick = () => {
-      // Find and click the matching row in the sidebar cat list
-      const catRow = document.querySelector(`#mp-cat-list [data-cat="${cat}"]`);
-      if (catRow) catRow.click();
-      else mpSelectCat(cat, null);
-      mpBuildBrowseCatPills();
-    };
+    btn.className = 'mp-cat-pill' + (isActive ? ' active' : '') + (isEmpty ? ' empty' : '');
+    btn.textContent = `${cat} (${count})`;
+    if (!isEmpty) {
+      // Delegate to mpSelectCat which correctly populates the series list
+      btn.onclick = () => mpSelectCat(cat, null);
+    }
     row.appendChild(btn);
   }
 }
 
-function mpSelectCat(cat, el) {
-  mpActiveCategory = cat;
-  mpActiveSeries   = null;
-  mpCurrentPage    = 1;
-  document.querySelectorAll('#mp-cat-list .k-cat-row').forEach(r => r.classList.remove('active'));
-  if (el) el.classList.add('active');
-  else {
-    const catRow = document.querySelector(`#mp-cat-list [data-cat="${cat}"]`);
-    if (catRow) catRow.classList.add('active');
-  }
-  document.getElementById('mp-series-header').textContent      = cat;
-  document.getElementById('mp-series-header-lbl').textContent  = cat;
-  mpBuildBrowseCatPills();
-  const series = mpAllSeries.filter(s => (s.category || 'Other') === cat)
-    .sort((a,b) => (a.title||a.ticker).localeCompare(b.title||b.ticker));
-  const col = document.getElementById('mp-series-list');
-  col.innerHTML = '';
-  for (const s of series) {
-    const row = document.createElement('div');
-    row.className = 'k-series-row';
-    row.dataset.ticker = s.ticker;
-    row.innerHTML = `<div class="k-series-title">${s.title || s.ticker}</div>
-      <div class="k-series-meta">${s.ticker}</div>`;
-    row.onclick = () => mpSelectSeries(s.ticker, row);
-    col.appendChild(row);
-  }
-  document.getElementById('mp-market-body').innerHTML =
-    '<div style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
-}
-
-async function mpSelectSeries(ticker, el) {
-  mpActiveSeries = ticker;
-  mpCurrentPage  = 1;
-  document.querySelectorAll('#mp-series-list .k-series-row').forEach(r => r.classList.remove('active'));
-  if (el) el.classList.add('active');
-  mpFetchBrowseMarkets();
-}
-
-// ── Browse: fetch + render ──────────────────────────────────────────────────
-async function mpFetchBrowseMarkets() {
-  if (!mpActiveSeries) return;
-  const body = document.getElementById('mp-market-body');
-  body.innerHTML = '<div style="padding:12px;font-size:10px;color:#222">Loading…</div>';
-  const params = new URLSearchParams({
-    series_ticker: mpActiveSeries,
-    min_price: mpPriceMin, max_price: mpPriceMax,
-    sort: mpSortMode, page: mpCurrentPage, per_page: MP_PER_PAGE
-  });
-  // Only send days params when user has actually filtered (not at defaults)
-  if (mpDaysMin > 0)    params.set('min_days', mpDaysMin);
-  if (mpDaysMax < 1500) params.set('max_days', mpDaysMax);
-  if (mpSearchQuery) params.set('q', mpSearchQuery);
-  try {
-    const resp = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data  = await resp.json();
-    const mks   = data.markets || [];
-    const pages = Math.max(1, Math.ceil((data.total || 0) / MP_PER_PAGE));
-    body.innerHTML = '';
-    if (!mks.length) {
-      body.innerHTML = '<div style="padding:16px;font-size:10px;color:#222">No markets found.</div>';
-    } else {
-      mks.forEach(m => body.insertAdjacentHTML('beforeend', kRenderMarket(m, false)));
-    }
-    body._pages = pages;
-    document.getElementById('mp-page-info').textContent = `Page ${mpCurrentPage} of ${pages}`;
-    document.getElementById('mp-prev-btn').disabled = mpCurrentPage <= 1;
-    document.getElementById('mp-next-btn').disabled = mpCurrentPage >= pages;
-  } catch(e) {
-    body.innerHTML = `<div style="padding:12px;font-size:10px;color:#555">Error: ${e.message}</div>`;
-  }
-}
-
-function mpChangePage(dir) {
-  const pages = document.getElementById('mp-market-body')._pages || 1;
-  mpCurrentPage = Math.max(1, Math.min(pages, mpCurrentPage + dir));
-  mpFetchBrowseMarkets();
-}
-
-// ── Browse: filters ─────────────────────────────────────────────────────────
-function mpUpdatePriceRange() {
-  const mn = +document.getElementById('mp-price-min').value;
-  const mx = +document.getElementById('mp-price-max').value;
-  mpPriceMin = Math.min(mn,mx); mpPriceMax = Math.max(mn,mx);
-  const f = document.getElementById('mp-price-fill');
-  f.style.left  = (mpPriceMin) + '%';
-  f.style.width = (mpPriceMax - mpPriceMin) + '%';
-  document.getElementById('mp-price-label').textContent =
-    (mpPriceMin===0 && mpPriceMax===100) ? 'Any' : `${mpPriceMin}¢–${mpPriceMax}¢`;
-  if (mpActiveSeries) { mpCurrentPage=1; mpFetchBrowseMarkets(); }
-}
-
-function mpUpdateDaysRange() {
-  const mn = +document.getElementById('mp-days-min').value;
-  const mx = +document.getElementById('mp-days-max').value;
-  mpDaysMin = Math.min(mn,mx); mpDaysMax = Math.max(mn,mx);
-  const f = document.getElementById('mp-days-fill');
-  f.style.left  = (mpDaysMin/1500*100) + '%';
-  f.style.width = ((mpDaysMax-mpDaysMin)/1500*100) + '%';
-  document.getElementById('mp-days-label').textContent =
-    (mpDaysMin===0 && mpDaysMax===1500) ? 'Any' : `${mpDaysMin}–${mpDaysMax}d`;
-  if (mpActiveSeries) { mpCurrentPage=1; mpFetchBrowseMarkets(); }
-}
-
-function mpSetSort(mode) {
-  mpSortMode = mode;
-  document.querySelectorAll('#mp-market-body ~ .k-sort-strip .k-sort-btn, .k-sort-strip .k-sort-btn[id^="mpsort"]').forEach(b => b.classList.remove('active'));
-  const btn = document.getElementById('mpsort-' + mode);
-  if (btn) btn.classList.add('active');
-  mpCurrentPage = 1;
-  if (mpActiveSeries) mpFetchBrowseMarkets();
-}
-
-function mpOnSearch() {
-  mpSearchQuery = document.getElementById('mp-search-input').value.trim();
-  document.getElementById('mp-search-clear').style.display = mpSearchQuery ? '' : 'none';
-  clearTimeout(mpSearchDebounce);
-  mpSearchDebounce = setTimeout(() => { mpCurrentPage=1; if(mpActiveSeries) mpFetchBrowseMarkets(); }, 300);
-}
-
-function mpClearSearch() {
-  mpSearchQuery = '';
-  document.getElementById('mp-search-input').value = '';
-  document.getElementById('mp-search-clear').style.display = 'none';
-  mpCurrentPage = 1;
-  if (mpActiveSeries) mpFetchBrowseMarkets();
-}
-
-// ── Semantic Match ──────────────────────────────────────────────────────────
-function mpGetCat(m) {
-  const s = mpSeriesMap[m.series_ticker || ''];
-  return (s && s.category) || m.category || 'Other';
-}
-
-function mpUpdateConf() {
-  mpConfThreshold = +document.getElementById('mp-conf-slider').value / 100;
-  document.getElementById('mp-conf-val').textContent = '≥ ' + mpConfThreshold.toFixed(2);
-  mpMatchPage = 1;
-  mpFetchMatch();
-}
-
-async function mpFetchMatch() {
-  try {
-    const params = new URLSearchParams({ threshold: mpConfThreshold, page: 1, per_page: 500 });
-    const resp = await fetch(KALSHI_API + '/api/kalshi/match?' + params);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    mpMatchAll = data.markets || [];
-    const lbl = document.getElementById('mp-corpus-lbl');
-    if (lbl && data.corpus) lbl.textContent = data.corpus;
-    mpBuildMatchCatRow();
-    mpRenderMatchMarkets();
-    // Auto-update signal/tension tabs since they draw from mpMatchAll
-    if (stratActiveTab === 'signal' || stratActiveTab === 'tension') stratRun();
-  } catch(e) {}
-}
 
 function mpBuildMatchCatRow() {
   const counts = {};
   mpMatchAll.forEach(m => { const c = mpGetCat(m); counts[c] = (counts[c]||0)+1; });
   const row = document.getElementById('mp-match-cat-row');
-  row.innerHTML = '<span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444;flex-shrink:0;">Filter</span>';
-  for (const cat of Object.keys(counts).sort()) {
-    const ex = mpExcludedCats.has(cat);
+  row.innerHTML = '<span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444;flex-shrink:0;">Category</span>';
+
+  for (const cat of CANONICAL_CATS) {
+    const count   = counts[cat] || 0;
+    const ex      = mpExcludedCats.has(cat);
+    const isEmpty = count === 0;
     const btn = document.createElement('button');
-    btn.style.cssText = `font-size:9px;font-weight:600;padding:2px 8px;cursor:pointer;border-radius:2px;
-      border:1px solid ${ex?'#222':'#2a4a99'};background:${ex?'transparent':'rgba(20,40,120,0.18)'};
-      color:${ex?'#333':'#4477dd'};text-decoration:${ex?'line-through':'none'};transition:all 0.15s;`;
-    btn.textContent = `${cat} (${counts[cat]})`;
-    btn.onclick = () => {
-      if (mpExcludedCats.has(cat)) mpExcludedCats.delete(cat); else mpExcludedCats.add(cat);
-      mpMatchPage=1; mpBuildMatchCatRow(); mpRenderMatchMarkets();
-    };
+    btn.className = 'mp-cat-pill' + (isEmpty ? ' empty' : ex ? ' excluded' : ' active');
+    btn.textContent = `${cat} (${count})`;
+    if (!isEmpty) {
+      btn.onclick = () => {
+        if (mpExcludedCats.has(cat)) mpExcludedCats.delete(cat); else mpExcludedCats.add(cat);
+        mpMatchPage = 1; mpBuildMatchCatRow(); mpRenderMatchMarkets();
+      };
+    }
     row.appendChild(btn);
   }
   if (mpExcludedCats.size > 0) {
@@ -2269,7 +2154,7 @@ async function mpRefresh() {
 const STRAT_FETCH_PER_PAGE = 500;  // markets per API fetch page
 const STRAT_DISPLAY_PER   = 50;   // cards shown per display page
 
-let stratActiveTab      = 'expiry';
+let stratActiveTab      = 'extreme';
 let stratExpiryDays     = 3;
 let stratExpiryMin      = 25;
 let stratExpiryMax      = 75;
@@ -2394,28 +2279,23 @@ function stratBuildCatPills(markets) {
   const row = document.getElementById('strat-cat-row');
   if (!row) return;
   const counts = {};
-  markets.forEach(m => {
-    const cat = mpGetCat(m);
-    counts[cat] = (counts[cat] || 0) + 1;
-  });
-  const cats = Object.keys(counts).sort();
-  if (!cats.length) {
-    row.innerHTML = '';
-    return;
-  }
-  row.innerHTML = '<span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444;flex-shrink:0;">Filter</span>';
-  for (const cat of cats) {
-    const ex = stratExcludedCats.has(cat);
+  markets.forEach(m => { const cat = mpGetCat(m); counts[cat] = (counts[cat]||0)+1; });
+
+  row.innerHTML = '<span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#444;flex-shrink:0;">Category</span>';
+
+  for (const cat of CANONICAL_CATS) {
+    const count   = counts[cat] || 0;
+    const ex      = stratExcludedCats.has(cat);
+    const isEmpty = count === 0;
     const btn = document.createElement('button');
-    btn.style.cssText = `font-size:9px;font-weight:600;padding:2px 8px;cursor:pointer;border-radius:2px;
-      border:1px solid ${ex?'#222':'#2a4a99'};background:${ex?'transparent':'rgba(20,40,120,0.18)'};
-      color:${ex?'#333':'#4477dd'};text-decoration:${ex?'line-through':'none'};transition:all 0.15s;`;
-    btn.textContent = `${cat} (${counts[cat]})`;
-    btn.onclick = () => {
-      if (stratExcludedCats.has(cat)) stratExcludedCats.delete(cat); else stratExcludedCats.add(cat);
-      stratBuildCatPills(stratLastMarkets);
-      stratRenderFiltered();
-    };
+    btn.className = 'mp-cat-pill' + (isEmpty ? ' empty' : ex ? ' excluded' : ' active');
+    btn.textContent = `${cat} (${count})`;
+    if (!isEmpty) {
+      btn.onclick = () => {
+        if (stratExcludedCats.has(cat)) stratExcludedCats.delete(cat); else stratExcludedCats.add(cat);
+        stratBuildCatPills(stratLastMarkets); stratRenderFiltered();
+      };
+    }
     row.appendChild(btn);
   }
   if (stratExcludedCats.size > 0) {
@@ -2442,7 +2322,8 @@ function stratChangePage(delta) {
 function stratRender(markets) {
   stratLastMarkets = markets;
   stratDisplayPage = 1;
-  stratExcludedCats.clear();
+  // Note: stratExcludedCats is NOT cleared here — preserves user's filter selections
+  // across background refreshes. Only stratSwitchTab (explicit tab change) clears it.
   stratBuildCatPills(markets);
   stratRenderFiltered();
 }
@@ -2663,12 +2544,193 @@ function stratRenderCard(m) {
   </div>`;
 }
 
+
+// ── Browse helpers ────────────────────────────────────────────────────────────
+
+function mpGetCat(market) {
+  const s = mpSeriesMap[market.series_ticker || ''];
+  return (s && s.category) || market.category || 'Other';
+}
+
+function mpSelectCat(cat, el) {
+  mpActiveCategory = cat;
+  mpActiveSeries   = null;
+  mpCurrentPage    = 1;
+  document.querySelectorAll('#mp-cat-list .k-cat-row').forEach(r => r.classList.remove('active'));
+  if (el) el.classList.add('active');
+  else {
+    const catRow = document.querySelector(`#mp-cat-list [data-cat="${cat}"]`);
+    if (catRow) catRow.classList.add('active');
+  }
+  document.getElementById('mp-series-header').textContent     = cat;
+  document.getElementById('mp-series-header-lbl').textContent = cat;
+  mpBuildBrowseCatPills();
+  const series = mpAllSeries
+    .filter(s => (s.category || 'Other') === cat)
+    .sort((a,b) => (a.title||a.ticker).localeCompare(b.title||b.ticker));
+  const col = document.getElementById('mp-series-list');
+  col.innerHTML = '';
+  for (const s of series) {
+    const row = document.createElement('div');
+    row.className = 'k-series-row';
+    row.dataset.ticker = s.ticker;
+    row.innerHTML = `<div class="k-series-title">${s.title || s.ticker}</div>
+      <div class="k-series-meta">${s.ticker}</div>`;
+    row.onclick = () => mpSelectSeries(s.ticker, row);
+    col.appendChild(row);
+  }
+  document.getElementById('mp-market-body').innerHTML =
+    '<div style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
+}
+
+async function mpSelectSeries(ticker, el) {
+  mpActiveSeries = ticker;
+  mpCurrentPage  = 1;
+  document.querySelectorAll('#mp-series-list .k-series-row').forEach(r => r.classList.remove('active'));
+  if (el) el.classList.add('active');
+  await mpFetchBrowseMarkets();
+}
+
+async function mpFetchBrowseMarkets() {
+  if (!mpActiveSeries) return;
+  const body = document.getElementById('mp-market-body');
+  body.innerHTML = '<div style="padding:12px;font-size:10px;color:#222">Loading…</div>';
+  const params = new URLSearchParams({
+    series_ticker: mpActiveSeries,
+    min_price: mpPriceMin,
+    max_price: mpPriceMax,
+    sort:      mpSortMode,
+    page:      mpCurrentPage,
+    per_page:  MP_PER_PAGE,
+  });
+  if (mpDaysMin > 0)    params.set('min_days', mpDaysMin);
+  if (mpDaysMax < 1500) params.set('max_days', mpDaysMax);
+  if (mpSearchQuery)    params.set('q', mpSearchQuery);
+  try {
+    const resp = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data  = await resp.json();
+    const mks   = data.markets || [];
+    const pages = Math.max(1, Math.ceil((data.total || 0) / MP_PER_PAGE));
+    body.innerHTML = '';
+    if (!mks.length) {
+      body.innerHTML = '<div style="padding:16px;font-size:10px;color:#222">No markets found.</div>';
+    } else {
+      mks.forEach(m => body.insertAdjacentHTML('beforeend', kRenderMarket(m, false)));
+    }
+    document.getElementById('mp-page-info').textContent = `Page ${mpCurrentPage} of ${pages}`;
+    document.getElementById('mp-prev-btn').disabled = mpCurrentPage <= 1;
+    document.getElementById('mp-next-btn').disabled = mpCurrentPage >= pages;
+  } catch(e) {
+    body.innerHTML = `<div style="padding:12px;font-size:10px;color:#555">Error: ${e.message}</div>`;
+  }
+}
+
+function mpChangePage(delta) {
+  mpCurrentPage = Math.max(1, mpCurrentPage + delta);
+  mpFetchBrowseMarkets();
+}
+
+function mpSetSort(mode, el) {
+  mpSortMode = mode;
+  document.querySelectorAll('.k-sort-btn').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  mpCurrentPage = 1;
+  mpFetchBrowseMarkets();
+}
+
+function mpOnSearch() {
+  clearTimeout(mpSearchDebounce);
+  mpSearchQuery = document.getElementById('mp-search-input')?.value || '';
+  const clearBtn = document.getElementById('mp-search-clear');
+  if (clearBtn) clearBtn.style.display = mpSearchQuery ? '' : 'none';
+  mpSearchDebounce = setTimeout(() => {
+    mpCurrentPage = 1;
+    mpFetchBrowseMarkets();
+  }, 300);
+}
+
+function mpClearSearch() {
+  const input = document.getElementById('mp-search-input');
+  if (input) input.value = '';
+  mpSearchQuery = '';
+  const clearBtn = document.getElementById('mp-search-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  mpCurrentPage = 1;
+  mpFetchBrowseMarkets();
+}
+
+function mpUpdatePriceRange() {
+  const minEl = document.getElementById('mp-price-min');
+  const maxEl = document.getElementById('mp-price-max');
+  const fill  = document.getElementById('mp-price-fill');
+  const label = document.getElementById('mp-price-label');
+  if (!minEl || !maxEl) return;
+  let lo = +minEl.value, hi = +maxEl.value;
+  if (lo > hi) { [lo, hi] = [hi, lo]; }
+  mpPriceMin = lo; mpPriceMax = hi;
+  if (fill) {
+    fill.style.left  = lo + '%';
+    fill.style.width = (hi - lo) + '%';
+  }
+  if (label) label.textContent = (lo === 0 && hi === 100) ? 'Any' : `${lo}¢–${hi}¢`;
+  mpCurrentPage = 1;
+  if (mpActiveSeries) mpFetchBrowseMarkets();
+}
+
+function mpUpdateDaysRange() {
+  const minEl = document.getElementById('mp-days-min');
+  const maxEl = document.getElementById('mp-days-max');
+  const fill  = document.getElementById('mp-days-fill');
+  const label = document.getElementById('mp-days-label');
+  if (!minEl || !maxEl) return;
+  let lo = +minEl.value, hi = +maxEl.value;
+  if (lo > hi) { [lo, hi] = [hi, lo]; }
+  mpDaysMin = lo; mpDaysMax = hi;
+  const pct = 1500;
+  if (fill) {
+    fill.style.left  = (lo / pct * 100) + '%';
+    fill.style.width = ((hi - lo) / pct * 100) + '%';
+  }
+  if (label) label.textContent = (lo === 0 && hi === 1500) ? 'Any' : `${lo}d–${hi}d`;
+  mpCurrentPage = 1;
+  if (mpActiveSeries) mpFetchBrowseMarkets();
+}
+
+// ── Event Matches: fetch + render ─────────────────────────────────────────────
+
+async function mpFetchMatch(resetPage = false) {
+  try {
+    const params = new URLSearchParams({
+      threshold: mpConfThreshold,
+      page: 1, per_page: 500,
+    });
+    const resp = await fetch(KALSHI_API + '/api/kalshi/match?' + params);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    mpMatchAll = data.markets || [];
+    // Only reset to page 1 when explicitly requested (e.g. confidence change),
+    // not on background interval refreshes — preserves user's scroll position.
+    if (resetPage) mpMatchPage = 1;
+    mpBuildMatchCatRow();    // rebuilds pills but preserves mpExcludedCats
+    mpRenderMatchMarkets();  // re-renders respecting current exclusions + page
+  } catch(e) {
+    console.warn('[mpFetchMatch]', e);
+  }
+}
+
+function mpUpdateConf() {
+  mpConfThreshold = +document.getElementById('mp-conf-slider').value / 100;
+  document.getElementById('mp-conf-val').textContent = '≥ ' + mpConfThreshold.toFixed(2);
+  mpFetchMatch(true);   // true = reset to page 1 (user changed threshold)
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 mpUpdatePriceRange();
 mpUpdateDaysRange();
 mpLoadSeries();
 mpUpdateStatus();
-mpFetchMatch();
+mpFetchMatch(true);
 setInterval(mpFetchMatch,   30000);
 setInterval(mpUpdateStatus, 60000);
 

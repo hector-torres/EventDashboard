@@ -1672,7 +1672,12 @@
       <!-- Footer -->
       <div class="strat-footer">
         <span class="strat-count" id="strat-count"></span>
-        <button class="strat-refresh-btn" onclick="stratRefresh()">↻ Refresh</button>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <button class="k-page-btn" id="strat-prev-btn" onclick="stratChangePage(-1)" disabled>← Prev</button>
+          <span class="k-page-info" id="strat-page-info" style="min-width:44px;text-align:center;"></span>
+          <button class="k-page-btn" id="strat-next-btn" onclick="stratChangePage(1)" disabled>Next →</button>
+          <button class="strat-refresh-btn" onclick="stratRefresh()">↻</button>
+        </div>
       </div>
     </div><!-- /col strategy -->
 
@@ -2261,6 +2266,9 @@ async function mpRefresh() {
 // STRATEGY PANEL — Near Expiry + Extreme
 // ══════════════════════════════════════════════════════════════════════════════
 
+const STRAT_FETCH_PER_PAGE = 500;  // markets per API fetch page
+const STRAT_DISPLAY_PER   = 50;   // cards shown per display page
+
 let stratActiveTab      = 'expiry';
 let stratExpiryDays     = 3;
 let stratExpiryMin      = 25;
@@ -2279,6 +2287,7 @@ let stratLastMarkets    = [];
 
 function stratSwitchTab(tab) {
   stratActiveTab = tab;
+  stratDisplayPage = 1;
   stratExcludedCats.clear();
   ['expiry','extreme','signal','tension'].forEach(t => {
     document.getElementById('strat-tab-' + t).classList.toggle('active', t === tab);
@@ -2335,49 +2344,42 @@ async function stratRun() {
   }
 }
 
+// ── Shared: fetch all pages from API ─────────────────────────────────────
+async function stratFetchAllPages(baseParams, sortFn) {
+  let page = 1, all = [];
+  while (true) {
+    const params = new URLSearchParams({ ...baseParams, page });
+    const resp = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    all = all.concat(data.markets || []);
+    if (page >= (data.total_pages || 1)) break;
+    page++;
+  }
+  if (sortFn) all.sort(sortFn);
+  return all;
+}
+
 async function stratFetchExpiry() {
-  // Near-expiry undecided: closing within N days, price in [min, max]
-  const params = new URLSearchParams({
-    min_price: stratExpiryMin,
-    max_price: stratExpiryMax,
-    max_days:  stratExpiryDays,
-    per_page:  200,
-    page:      1,
-  });
-  const resp = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const data = await resp.json();
-  // Sort by days_left ascending (most urgent first)
-  return (data.markets || []).sort((a, b) => (a.days_left ?? 999) - (b.days_left ?? 999));
+  // Near-expiry undecided: fetch ALL pages, sort by days ascending
+  const base = { min_price: stratExpiryMin, max_price: stratExpiryMax,
+                 max_days: stratExpiryDays, per_page: STRAT_FETCH_PER_PAGE };
+  return stratFetchAllPages(base, (a, b) => (a.days_left ?? 999) - (b.days_left ?? 999));
 }
 
 async function stratFetchExtreme() {
-  // Near-expiry extreme: closing within N days, price <= thresh OR >= (100-thresh)
-  // stratExtremeDays=0 means "All" — omit max_days param entirely
-  const buildParams = (minP, maxP) => {
-    const p = { min_price: minP, max_price: maxP, per_page: 200, page: 1 };
-    if (stratExtremeDays > 0) p.max_days = stratExtremeDays;
-    return new URLSearchParams(p);
-  };
-  const [loResp, hiResp] = await Promise.all([
-    fetch(KALSHI_API + '/api/kalshi/markets?' + buildParams(0, stratExtremeThresh)),
-    fetch(KALSHI_API + '/api/kalshi/markets?' + buildParams(100 - stratExtremeThresh, 100)),
+  // Fetch both low + high sides, all pages, merge & sort by extremity
+  const loBase = { min_price: 0, max_price: stratExtremeThresh, per_page: STRAT_FETCH_PER_PAGE };
+  const hiBase = { min_price: 100 - stratExtremeThresh, max_price: 100, per_page: STRAT_FETCH_PER_PAGE };
+  if (stratExtremeDays > 0) { loBase.max_days = stratExtremeDays; hiBase.max_days = stratExtremeDays; }
+  const [loAll, hiAll] = await Promise.all([
+    stratFetchAllPages(loBase, null),
+    stratFetchAllPages(hiBase, null),
   ]);
-  if (!loResp.ok || !hiResp.ok) throw new Error('HTTP error');
-  const [loData, hiData] = await Promise.all([loResp.json(), hiResp.json()]);
-
-  // Merge, deduplicate by ticker, sort by absolute distance from 50¢ (most extreme first)
   const seen = new Set();
-  const all = [...(loData.markets || []), ...(hiData.markets || [])].filter(m => {
-    if (seen.has(m.ticker)) return false;
-    seen.add(m.ticker);
-    return true;
-  });
-  return all.sort((a, b) => {
-    const priceA = stratGetPrice(a);
-    const priceB = stratGetPrice(b);
-    return Math.abs(priceB - 50) - Math.abs(priceA - 50);
-  });
+  return [...loAll, ...hiAll]
+    .filter(m => { if (seen.has(m.ticker)) return false; seen.add(m.ticker); return true; })
+    .sort((a, b) => Math.abs(stratGetPrice(b) - 50) - Math.abs(stratGetPrice(a) - 50));
 }
 
 function stratGetPrice(m) {
@@ -2430,9 +2432,16 @@ function stratRenderFiltered() {
   stratRenderToDOM(filtered);
 }
 
+function stratChangePage(delta) {
+  const filtered = stratLastMarkets.filter(m => !stratExcludedCats.has(mpGetCat(m)));
+  const pages = Math.max(1, Math.ceil(filtered.length / STRAT_DISPLAY_PER));
+  stratDisplayPage = Math.max(1, Math.min(pages, stratDisplayPage + delta));
+  stratRenderToDOM(filtered);
+}
+
 function stratRender(markets) {
   stratLastMarkets = markets;
-  // Reset excluded cats when new data loads (tab switch / refresh)
+  stratDisplayPage = 1;
   stratExcludedCats.clear();
   stratBuildCatPills(markets);
   stratRenderFiltered();
@@ -2447,19 +2456,35 @@ function stratRenderToDOM(markets) {
       Try widening the price range, extending the days window, or resetting the category filter.
     </div>`;
     if (count) count.textContent = '0 markets';
+    updateStratPagination(0);
     return;
   }
 
-  if (count) count.textContent = markets.length.toLocaleString() + ' markets';
+  const total = markets.length;
+  const pages = Math.max(1, Math.ceil(total / STRAT_DISPLAY_PER));
+  stratDisplayPage = Math.min(stratDisplayPage, pages);
+  const start = (stratDisplayPage - 1) * STRAT_DISPLAY_PER;
+  const slice = markets.slice(start, start + STRAT_DISPLAY_PER);
 
-  // Update timestamp
+  if (count) count.textContent = total.toLocaleString() + ' markets';
+
   const upd = document.getElementById('strat-updated');
   if (upd) upd.textContent = 'updated ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
 
   body.innerHTML = '';
-  markets.slice(0, 100).forEach(m => {
-    body.insertAdjacentHTML('beforeend', stratRenderCard(m));
-  });
+  slice.forEach(m => body.insertAdjacentHTML('beforeend', stratRenderCard(m)));
+  body.scrollTop = 0;
+  updateStratPagination(total);
+}
+
+function updateStratPagination(total) {
+  const pages = total > 0 ? Math.max(1, Math.ceil(total / STRAT_DISPLAY_PER)) : 1;
+  const prev = document.getElementById('strat-prev-btn');
+  const next = document.getElementById('strat-next-btn');
+  const info = document.getElementById('strat-page-info');
+  if (prev) prev.disabled = stratDisplayPage <= 1;
+  if (next) next.disabled = stratDisplayPage >= pages;
+  if (info) info.textContent = total > 0 ? `${stratDisplayPage} / ${pages}` : '';
 }
 
 // ── Signal + Tension filter setters ─────────────────────────────────────────

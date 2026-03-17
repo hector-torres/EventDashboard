@@ -115,6 +115,40 @@ def refresh_feeds():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/feeds/keywords', methods=['GET'])
+def get_keywords():
+    """Return current active feeds with enabled state."""
+    return jsonify({'feeds': feed_manager.active_feeds})
+
+
+@app.route('/api/feeds/keywords', methods=['POST'])
+def add_keyword():
+    """Add a new keyword query feed. Body: {query, limit?}"""
+    data  = request.get_json() or {}
+    query = (data.get('query') or '').strip()
+    limit = int(data.get('limit', 20))
+    if not query:
+        return jsonify({'success': False, 'error': 'query required'}), 400
+    feed = feed_manager.add_keyword(query, limit)
+    if feed is None:
+        return jsonify({'success': False, 'error': 'duplicate or empty query'}), 409
+    return jsonify({'success': True, 'feed': feed})
+
+
+@app.route('/api/feeds/keywords/<feed_id>', methods=['DELETE'])
+def remove_keyword(feed_id):
+    """Remove a keyword feed by id."""
+    removed = feed_manager.remove_keyword(feed_id)
+    return jsonify({'success': removed})
+
+
+@app.route('/api/feeds/keywords/<feed_id>/toggle', methods=['POST'])
+def toggle_keyword(feed_id):
+    """Toggle a feed enabled/disabled."""
+    enabled = feed_manager.toggle_keyword(feed_id)
+    return jsonify({'success': True, 'enabled': enabled})
+
 @app.route('/api/accounts')
 def get_accounts():
     return jsonify({
@@ -126,6 +160,28 @@ def get_accounts():
 def reload_accounts():
     handles = feed_manager.reload_priority_accounts()
     return jsonify({'success': True, 'accounts': sorted(handles), 'count': len(handles)})
+
+
+@app.route('/api/accounts', methods=['POST'])
+def add_account():
+    """Add a new tracked account. Body: {handle}"""
+    data   = request.get_json() or {}
+    handle = (data.get('handle') or '').strip().lstrip('@').lower()
+    if not handle:
+        return jsonify({'success': False, 'error': 'handle required'}), 400
+    added = feed_manager.add_account(handle)
+    if not added:
+        return jsonify({'success': False, 'error': 'already tracked or invalid'}), 409
+    return jsonify({'success': True, 'handle': handle,
+                    'accounts': sorted(list(feed_manager.priority_handles))})
+
+
+@app.route('/api/accounts/<handle>', methods=['DELETE'])
+def remove_account(handle):
+    """Remove a tracked account by handle."""
+    removed = feed_manager.remove_account(handle)
+    return jsonify({'success': removed,
+                    'accounts': sorted(list(feed_manager.priority_handles))})
 
 # ─── Market indices routes ────────────────────────────────────────────────────
 

@@ -29,7 +29,7 @@
       background: #111111;
       border-bottom: 1px solid #252525;
       padding: 0 18px;
-      height: 40px;
+      height: 44px;
       display: flex;
       align-items: center;
       gap: 0;
@@ -50,9 +50,9 @@
     .title-bar-nav a.active { color: #4477dd; border-bottom-color: #4477dd; }
 
     .title-bar-text {
-      font-size: 13px;
+      font-size: 16px;
       font-weight: 700;
-      letter-spacing: 0.18em;
+      letter-spacing: 0.16em;
       color: #e2e2e2;
       text-transform: uppercase;
     }
@@ -441,26 +441,84 @@
     .panel-btn:hover { color: #cccccc; border-color: #666; }
 
     /* ── Keyword spike chip bar ──────────────────────── */
-    .spike-bar {
-      padding: 7px 14px 6px;
-      border-bottom: 1px solid #161616;
-      background: #0c0c0c;
-      min-height: 34px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
+    /* ── Shared collapsible bar (spike bar, accounts bar, keyword bar) ── */
+    .cbar {
+      border-bottom: 1px solid #1a1a1a;
+      background: #0a0a0a;
       flex-shrink: 0;
     }
-    .spike-bar-label {
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 0.2em;
-      color: #2e2e2e;
-      text-transform: uppercase;
-      white-space: nowrap;
-      margin-right: 2px;
+    .cbar-header {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 14px 5px; cursor: pointer; user-select: none;
     }
+    .cbar-header:hover .cbar-label { color: #999; }
+    .cbar-label {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.2em;
+      color: #666; text-transform: uppercase; white-space: nowrap;
+    }
+    .cbar-arrow {
+      font-size: 10px; color: #444; line-height: 1;
+      transition: transform 0.15s; user-select: none;
+    }
+    .cbar.collapsed .cbar-arrow { transform: rotate(-90deg); }
+    .cbar-count {
+      font-size: 10px; color: #555; letter-spacing: 0.04em;
+    }
+    .cbar-body {
+      padding: 0 10px 8px;
+      display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+    }
+    .cbar.collapsed .cbar-body { display: none; }
+
+    /* Spike bar legacy — wraps inside .cbar */
+    .spike-bar-empty {
+      font-size: 10px; color: #444; letter-spacing: 0.08em; font-style: italic;
+    }
+
+    /* Keyword pill */
+    .kw-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 6px 2px 8px;
+      border-radius: 3px; font-size: 11px; font-weight: 400;
+      letter-spacing: 0.03em; cursor: default; user-select: none;
+      border: 1px solid #2a1800; background: #130b00; color: #886633;
+      transition: all 0.12s;
+    }
+    .kw-pill.disabled {
+      border-color: #1e1e1e; background: #111; color: #333;
+      text-decoration: line-through;
+    }
+    .kw-pill-toggle {
+      font-size: 10px; cursor: pointer; opacity: 0.6;
+      padding: 0 1px; line-height: 1;
+      transition: opacity 0.1s;
+    }
+    .kw-pill-toggle:hover { opacity: 1; }
+    .kw-pill-remove {
+      font-size: 10px; cursor: pointer; opacity: 0.4;
+      padding: 0 1px; line-height: 1; color: #aa4400;
+      transition: opacity 0.1s;
+    }
+    .kw-pill-remove:hover { opacity: 1; }
+
+    /* Add keyword input */
+    .sf3-kw-add {
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .sf3-kw-input {
+      font-size: 11px; background: #111; border: 1px solid #222;
+      color: #888; padding: 2px 7px; border-radius: 3px;
+      outline: none; width: 120px; font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .sf3-kw-input:focus { border-color: #442200; color: #bbb; }
+    .sf3-kw-input::placeholder { color: #333; }
+    .sf3-kw-add-btn {
+      font-size: 11px; background: #1a0d00; border: 1px solid #3a1800;
+      color: #886633; padding: 2px 8px; border-radius: 3px;
+      cursor: pointer; font-family: inherit; transition: all 0.12s;
+    }
+    .sf3-kw-add-btn:hover { background: #2a1500; color: #cc8844; border-color: #5a2800; }
     .spike-bar-empty {
       font-size: 10px;
       color: #242424;
@@ -630,35 +688,8 @@
 
     #sf3-panel { display: flex; flex-direction: column; }
 
-    /* Keyword list tooltip */
-    .sf3-kw-btn {
-      font-size: 10px; color: #551100; cursor: pointer;
-      user-select: none; opacity: 0.7; line-height: 1;
-      transition: opacity 0.15s; font-weight: 400;
-    }
-    .sf3-kw-btn:hover { opacity: 1; color: #cc4400; }
-    .sf3-kw-tooltip {
-      display: none; position: absolute; z-index: 400;
-      left: 8px; top: calc(100% + 2px);
-      width: 280px;
-      background: #0d0d0d; border: 1px solid #2a1500;
-      border-radius: 4px; padding: 10px 12px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.7);
-      font-weight: 400;
-    }
-    .sf3-kw-tooltip.visible { display: block; }
-    .sf3-kw-title {
-      font-size: 10px; font-weight: 700; color: #cc4400;
-      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;
-    }
-    .sf3-kw-body {
-      font-size: 10px; color: #666; line-height: 1.5; margin-bottom: 8px;
-      border-bottom: 1px solid #1e1e1e; padding-bottom: 7px;
-    }
-    .sf3-kw-item {
-      font-size: 10px; color: #888; padding: 2px 0;
-      letter-spacing: 0.03em; font-family: monospace;
-    }
+
+
 
     /* Noise filter bar */
     .sf3-filter-bar {
@@ -1342,6 +1373,24 @@
         </div>
       </div>
 
+      <!-- Accounts bar (collapsible) -->
+      <div class="cbar" id="acct-bar">
+        <div class="cbar-header" onclick="acctToggleBar()">
+          <span class="cbar-arrow" id="acct-collapse-btn">▾</span>
+          <span class="cbar-label">Tracked Accounts</span>
+          <span class="cbar-count" id="acct-count"></span>
+        </div>
+        <div class="cbar-body" id="acct-body">
+          <!-- Pills injected by acctBuildBar() -->
+          <div class="sf3-kw-add">
+            <input class="sf3-kw-input" id="acct-input"
+                   placeholder="add @handle…"
+                   onkeydown="if(event.key==='Enter') acctAddAccount()">
+            <button class="sf3-kw-add-btn" onclick="acctAddAccount()">+ Add</button>
+          </div>
+        </div>
+      </div>
+
       <div class="feed-panel-inner">
 
         <!-- Priority accounts feed (full panel) -->
@@ -1379,9 +1428,15 @@
         </div>
       </div>
       <!-- Spiked keyword chip bar -->
-      <div class="spike-bar" id="spike-bar">
-        <span class="spike-bar-label">Spikes</span>
-        <span class="spike-bar-empty" id="spike-bar-empty">none in last 15m</span>
+      <div class="cbar" id="spike-bar">
+        <div class="cbar-header" onclick="spikeToggleCollapse()">
+          <span class="cbar-arrow" id="spike-collapse-btn">▾</span>
+          <span class="cbar-label">Spikes</span>
+          <span class="cbar-count" id="spike-chip-count"></span>
+        </div>
+        <div class="cbar-body" id="spike-body">
+          <span class="spike-bar-empty" id="spike-bar-empty">none in last 15m</span>
+        </div>
       </div>
       <div class="panel-body" id="events-body">
         <div class="state-empty" id="events-empty">Monitoring for events…</div>
@@ -1397,26 +1452,33 @@
     <div class="panel" id="sf3-panel">
 
       <!-- Header -->
-      <div class="panel-header" style="position:relative">
+      <div class="panel-header">
         <div class="panel-title-group">
           <div class="panel-bar" style="background:#8b0000"></div>
-          <div class="panel-title" style="color:#dd3300;display:flex;align-items:center;gap:5px">
-            Keyword Sweep
-            <span class="sf3-kw-btn" id="sf3-kw-btn" onclick="sf3ToggleKeywords(event)">ⓘ</span>
-            <div class="sf3-kw-tooltip" id="sf3-kw-tooltip">
-              <div class="sf3-kw-title">Active Search Queries</div>
-              <div class="sf3-kw-body">
-                Bluesky is searched every 30s using these queries. Any post matching
-                a query from any public account is pulled into this feed.
-              </div>
-              <div class="sf3-kw-item">⌕ breaking</div><div class="sf3-kw-item">⌕ just in</div><div class="sf3-kw-item">⌕ developing story</div><div class="sf3-kw-item">⌕ flash alert</div><div class="sf3-kw-item">⌕ explosion attack strike</div><div class="sf3-kw-item">⌕ earthquake hurricane tornado wildfire</div><div class="sf3-kw-item">⌕ market crash rate hike fed reserve</div><div class="sf3-kw-item">⌕ missile launches troops invasion sanctions</div>
-            </div>
-          </div>
+          <div class="panel-title" style="color:#dd3300">Keyword Sweep</div>
           <div class="panel-count" id="sf3-count">0 posts</div>
         </div>
         <div class="panel-right">
           <div class="live-dot"></div>
           <div class="panel-status" id="sf3-status">live</div>
+        </div>
+      </div>
+
+      <!-- Keyword bar (collapsible, editable) -->
+      <div class="cbar" id="sf3-kw-bar">
+        <div class="cbar-header" onclick="sf3ToggleKwBar()">
+          <span class="cbar-arrow" id="sf3-kw-collapse-btn">▾</span>
+          <span class="cbar-label">Keywords</span>
+          <span class="cbar-count" id="sf3-kw-chip-count"></span>
+        </div>
+        <div class="cbar-body" id="sf3-kw-body">
+          <!-- Pills injected by sf3BuildKwBar() -->
+          <div class="sf3-kw-add">
+            <input class="sf3-kw-input" id="sf3-kw-input"
+                   placeholder="add keyword…"
+                   onkeydown="if(event.key==='Enter') sf3AddKeyword()">
+            <button class="sf3-kw-add-btn" onclick="sf3AddKeyword()">+ Add</button>
+          </div>
         </div>
       </div>
 
@@ -1832,7 +1894,7 @@ function renderPost(p) {
     : '';
 
   const mediaBadge = p.has_media
-    ? `<div class="feed-badge media" title="Post contains ${p.media_type || 'media'}">${p.media_type === 'video' ? '▶ video' : '🖼 image'}</div>`
+    ? `<div class="feed-badge media" title="Post contains ${p.media_type || 'media'}">${p.media_type === 'video' ? '▶ video' : p.media_type === 'link' ? '🔗 link' : '🖼 image'}</div>`
     : '';
 
   const noiseBadge = (bucket === 'dim' && !priority)
@@ -1856,9 +1918,6 @@ function renderPost(p) {
     </div>
     <div class="feed-text">${esc(p.text || '')}</div>
     <div class="feed-stats">
-      <div class="feed-stat">♥ ${p.like_count || 0}</div>
-      <div class="feed-stat">↺ ${p.repost_count || 0}</div>
-      <div class="feed-stat">💬 ${p.reply_count || 0}</div>
       ${(!priority && (p.noise_score ?? 0) > 0) ? `<div class="feed-stat feed-noise-score" title="Noise score: ${p.noise_score} · ${(p.noise_reasons||[]).join(', ')}">noise ${p.noise_score}</div>` : ''}
       <a href="${esc(p.url)}" target="_blank" class="feed-link">↗ bsky</a>
     </div>
@@ -2032,6 +2091,8 @@ function renderSpikeBar() {
       spikeKeywords.delete(kw);
     }
   }
+  const body2 = document.getElementById('spike-body');
+  if (body2) body2.querySelectorAll('.spike-chip').forEach(el => el.remove());
   bar.querySelectorAll('.spike-chip').forEach(el => el.remove());
   if (spikeKeywords.size === 0) {
     if (empty) empty.style.display = '';
@@ -2052,7 +2113,8 @@ function renderSpikeBar() {
     chip.title      = (active ? 'Hide' : 'Show') + ' "' + kw + '" events';
     chip.innerHTML  = '<span class="chip-dot"></span>' + esc(kw) + '<span class="chip-count">' + count + '</span>';
     chip.onclick    = () => toggleSpikeKeyword(kw);
-    bar.appendChild(chip);
+    const target = document.getElementById('spike-body') || bar;
+    target.insertBefore(chip, target.querySelector('.spike-bar-empty'));
   }
   updateEventsCount();
 }
@@ -2193,19 +2255,179 @@ function sf3IngestPosts(newSearchPosts) {
   sf3Rerender();
 }
 
+// ── Spike bar collapse ────────────────────────────────────────────────────────
+let spikeCollapsed = false;
+function spikeToggleCollapse() {
+  spikeCollapsed = !spikeCollapsed;
+  const bar   = document.getElementById('spike-bar');
+  const count = document.getElementById('spike-chip-count');
+  if (!bar) return;
+  bar.classList.toggle('collapsed', spikeCollapsed);
+  const n = bar.querySelectorAll('.spike-chip').length;
+  if (count) count.textContent = n ? `(${n})` : '';
+}
+
+// ── Accounts bar ─────────────────────────────────────────────────────────────
+let acctCollapsed = false;
+let acctHandles   = [];
+
+async function acctLoadAccounts() {
+  try {
+    const r = await fetch(API_BASE + '/api/accounts');
+    const d = await r.json();
+    acctHandles = d.accounts || [];
+    acctBuildBar();
+  } catch(e) { console.warn('[Acct] load failed:', e); }
+}
+
+function acctBuildBar() {
+  const body  = document.getElementById('acct-body');
+  const count = document.getElementById('acct-count');
+  if (!body) return;
+  body.querySelectorAll('.kw-pill').forEach(el => el.remove());
+  const addInput = body.querySelector('.sf3-kw-add');
+  if (count) count.textContent = `(${acctHandles.length})`;
+  for (const handle of acctHandles) {
+    const pill = document.createElement('span');
+    pill.className = 'kw-pill';
+    pill.innerHTML =
+      esc('@' + handle) +
+      `<span class="kw-pill-remove" title="Remove @${esc(handle)}" onclick="acctRemoveAccount('${esc(handle)}',this)">✕</span>`;
+    body.insertBefore(pill, addInput);
+  }
+}
+
+function acctToggleBar() {
+  acctCollapsed = !acctCollapsed;
+  const bar   = document.getElementById('acct-bar');
+  const count = document.getElementById('acct-count');
+  if (!bar) return;
+  bar.classList.toggle('collapsed', acctCollapsed);
+  if (count) count.textContent = `(${acctHandles.length})`;
+}
+
+async function acctAddAccount() {
+  const input  = document.getElementById('acct-input');
+  const handle = (input?.value || '').trim().replace(/^@/, '');
+  if (!handle) return;
+  try {
+    const r = await fetch(API_BASE + '/api/accounts', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({handle}),
+    });
+    const d = await r.json();
+    if (d.success) {
+      input.value = '';
+      await acctLoadAccounts();
+    } else {
+      input.style.borderColor = '#660000';
+      setTimeout(() => input.style.borderColor = '', 1200);
+    }
+  } catch(e) { console.warn('[Acct] add failed:', e); }
+}
+
+async function acctRemoveAccount(handle, el) {
+  try {
+    const r = await fetch(`${API_BASE}/api/accounts/${handle}`, {method: 'DELETE'});
+    const d = await r.json();
+    if (d.success) await acctLoadAccounts();
+  } catch(e) { console.warn('[Acct] remove failed:', e); }
+}
+
+// ── Keyword bar ───────────────────────────────────────────────────────────────
+let sf3KwCollapsed  = false;
+let sf3KwFeeds      = [];   // current feed list from server
+
+async function sf3LoadKeywords() {
+  try {
+    const r = await fetch(API_BASE + '/api/feeds/keywords');
+    const d = await r.json();
+    sf3KwFeeds = d.feeds || [];
+    sf3BuildKwBar();
+  } catch(e) { console.warn('[KW] load failed:', e); }
+}
+
+function sf3BuildKwBar() {
+  const body  = document.getElementById('sf3-kw-body');
+  const count = document.getElementById('sf3-kw-chip-count');
+  if (!body) return;
+
+  // Remove existing pills (keep the add input)
+  body.querySelectorAll('.kw-pill').forEach(el => el.remove());
+
+  const addInput = body.querySelector('.sf3-kw-add');
+  if (count) count.textContent = `(${sf3KwFeeds.length})`;
+
+  for (const feed of sf3KwFeeds) {
+    const pill = document.createElement('span');
+    pill.className  = 'kw-pill' + (feed.enabled ? '' : ' disabled');
+    pill.dataset.id = feed.id;
+    pill.title      = feed.enabled ? 'Click ⏸ to pause · ✕ to remove' : 'Paused — click ▶ to resume';
+
+    const toggleIcon = feed.enabled ? '⏸' : '▶';
+    const isCustom   = feed.custom;
+    pill.innerHTML =
+      `<span class="kw-pill-toggle" title="${feed.enabled ? 'Pause' : 'Resume'}" onclick="sf3ToggleKw('${esc(feed.id)}',this)">${toggleIcon}</span>` +
+      esc(feed.query) +
+      (isCustom ? `<span class="kw-pill-remove" title="Remove" onclick="sf3RemoveKw('${esc(feed.id)}',this)">✕</span>` : '');
+
+    body.insertBefore(pill, addInput);
+  }
+}
+
+function sf3ToggleKwBar() {
+  sf3KwCollapsed = !sf3KwCollapsed;
+  document.getElementById('sf3-kw-bar')?.classList.toggle('collapsed', sf3KwCollapsed);
+  const count = document.getElementById('sf3-kw-chip-count');
+  if (count) count.textContent = `(${sf3KwFeeds.length})`;
+}
+
+async function sf3ToggleKw(feedId, el) {
+  try {
+    const r = await fetch(`${API_BASE}/api/feeds/keywords/${feedId}/toggle`, {method:'POST'});
+    const d = await r.json();
+    if (d.success) await sf3LoadKeywords();
+  } catch(e) { console.warn('[KW] toggle failed:', e); }
+}
+
+async function sf3RemoveKw(feedId, el) {
+  try {
+    const r = await fetch(`${API_BASE}/api/feeds/keywords/${feedId}`, {method:'DELETE'});
+    const d = await r.json();
+    if (d.success) await sf3LoadKeywords();
+  } catch(e) { console.warn('[KW] remove failed:', e); }
+}
+
+async function sf3AddKeyword() {
+  const input = document.getElementById('sf3-kw-input');
+  if (!input) return;
+  const query = input.value.trim();
+  if (!query) return;
+  try {
+    const r = await fetch(API_BASE + '/api/feeds/keywords', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({query, limit: 20}),
+    });
+    const d = await r.json();
+    if (d.success) {
+      input.value = '';
+      await sf3LoadKeywords();
+    } else {
+      input.style.borderColor = '#660000';
+      setTimeout(() => input.style.borderColor = '', 1200);
+    }
+  } catch(e) { console.warn('[KW] add failed:', e); }
+}
+
 function sf3ToggleTooltip(e) {
   e.stopPropagation();
   document.getElementById('sf3-tooltip').classList.toggle('visible');
-  document.getElementById('sf3-kw-tooltip')?.classList.remove('visible');
 }
-function sf3ToggleKeywords(e) {
-  e.stopPropagation();
-  document.getElementById('sf3-kw-tooltip').classList.toggle('visible');
-  document.getElementById('sf3-tooltip')?.classList.remove('visible');
-}
+
 document.addEventListener('click', function() {
   document.getElementById('sf3-tooltip')?.classList.remove('visible');
-  document.getElementById('sf3-kw-tooltip')?.classList.remove('visible');
 });
 
 // Init slider fill on load
@@ -3042,6 +3264,8 @@ async function kManualRefresh() {
 
 // ── Init (Kalshi removed from Event Dashboard — see Market Dashboard) ─────────
 // kLoadSeries / kFetchMatch / kUpdatePriceRange intentionally not called here
+sf3LoadKeywords();   // populate keyword bar from server
+acctLoadAccounts();  // populate accounts bar from server
 
 // ── Debug overlay (Shift+D) ────────────────────────────────────────────────────
 const _debugOverlay = document.createElement('div');

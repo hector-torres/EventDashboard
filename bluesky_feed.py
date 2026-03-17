@@ -31,6 +31,7 @@ BSKY_PASSWORD = os.environ.get("BSKY_PASSWORD", "")  # Use an App Password
 
 # ─── Priority accounts file ───────────────────────────────────────────────────
 ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__), "accounts.txt")
+CUSTOM_FEEDS_FILE = os.path.join(os.path.dirname(__file__), "custom_feeds.json")
 
 # ─── Feed Configuration (add/remove feeds here) ───────────────────────────────
 FEED_CONFIG = [
@@ -124,6 +125,7 @@ class BlueSkyFeedManager:
             'Accept':     'application/json',
         })
         self._authenticate()
+        self._load_custom_feeds()   # restore persisted keywords
 
     # ── Priority accounts ──────────────────────────────────────────────────────
 
@@ -306,18 +308,32 @@ class BlueSkyFeedManager:
         # record.langs: language filter (F7)
         langs = record.get('langs') or []
 
-        # record.embed: media detection
-        embed      = record.get('embed') or {}
-        embed_type = embed.get('$type', '')
+        # Media detection — check both record.embed (source) and raw.embed (post-view).
+        # raw.embed is server-resolved and populated for priority account posts
+        # (getAuthorFeed); record.embed is the author-attached version.
+        record_embed = record.get('embed') or {}
+        raw_embed    = raw.get('embed') or {}
+        embed        = raw_embed if raw_embed else record_embed
+        embed_type   = embed.get('$type', '')
+
         if 'images' in embed_type:
             media_type = 'image'
         elif 'video' in embed_type:
             media_type = 'video'
+        elif 'external' in embed_type:
+            # Link card — article preview with thumbnail, title, description
+            media_type = 'link'
         elif 'recordWithMedia' in embed_type:
-            # Quote post that also contains media — check nested
+            # Quote post with media — check nested media type
             inner = (embed.get('media') or {}).get('$type', '')
-            media_type = 'video' if 'video' in inner else 'image'
+            if 'video' in inner:
+                media_type = 'video'
+            elif 'images' in inner:
+                media_type = 'image'
+            else:
+                media_type = 'link'
         else:
+            # Plain quote (record) or nothing
             media_type = None
         has_media = media_type is not None
 
@@ -356,10 +372,133 @@ class BlueSkyFeedManager:
 
         return post
 
+    def _save_custom_feeds(self):
+        """Persist custom + toggled feeds to custom_feeds.json."""
+        import json as _json
+        try:
+            data = {
+                'custom': [f for f in self.active_feeds if f.get('custom')],
+                'disabled_ids': [f['id'] for f in self.active_feeds
+                                 if not f.get('custom') and not f['enabled']],
+            }
+            with open(CUSTOM_FEEDS_FILE, 'w') as fh:
+                _json.dump(data, fh, indent=2)
+        except Exception as e:
+            print(f"[BlueSky] Failed to save custom_feeds.json: {e}")
+
+    def _load_custom_feeds(self):
+        """Load persisted custom feeds and disabled states."""
+        import json as _json
+        if not os.path.exists(CUSTOM_FEEDS_FILE):
+            return
+        try:
+            with open(CUSTOM_FEEDS_FILE) as fh:
+                data = _json.load(fh)
+            # Apply disabled states to built-in feeds
+            disabled = set(data.get('disabled_ids', []))
+            for f in self.active_feeds:
+                if f['id'] in disabled:
+                    f['enabled'] = False
+            # Re-add custom feeds (avoid duplicates)
+            existing_ids = {f['id'] for f in self.active_feeds}
+            for cf in data.get('custom', []):
+                if cf.get('id') and cf['id'] not in existing_ids:
+                    self.active_feeds.append(cf)
+            print(f"[BlueSky] Loaded {len(data.get('custom', []))} custom feed(s) from custom_feeds.json")
+        except Exception as e:
+            print(f"[BlueSky] Failed to load custom_feeds.json: {e}")
+
     # ── Cache access ───────────────────────────────────────────────────────────
 
     def get_cached_posts(self) -> List[Dict]:
         return self._cache
+
+    # ── Dynamic keyword management ────────────────────────────────────────────
+
+    def add_account(self, handle: str) -> bool:
+        """Add a handle to priority_handles and persist to accounts.txt."""
+        handle = handle.strip().lstrip('@').lower()
+        if not handle or handle in self.priority_handles:
+            return False
+        self.priority_handles.add(handle)
+        self._save_accounts()
+        print(f"[BlueSky] Added account: @{handle}")
+        return True
+
+    def remove_account(self, handle: str) -> bool:
+        """Remove a handle from priority_handles and persist to accounts.txt."""
+        handle = handle.strip().lstrip('@').lower()
+        if handle not in self.priority_handles:
+            return False
+        self.priority_handles.discard(handle)
+        self._save_accounts()
+        print(f"[BlueSky] Removed account: @{handle}")
+        return True
+
+    def _save_accounts(self):
+        """Write current priority_handles back to accounts.txt."""
+        try:
+            lines = []
+            # Preserve comments/blank lines from existing file
+            if os.path.exists(ACCOUNTS_FILE):
+                with open(ACCOUNTS_FILE, 'r') as f:
+                    for line in f:
+                        stripped = line.strip()
+                        if not stripped or stripped.startswith('#'):
+                            lines.append(line.rstrip())
+            # Write all current handles (sorted)
+            existing_handles = {l.lstrip('@').lower() for l in lines if l and not l.startswith('#')}
+            for h in sorted(self.priority_handles):
+                if h not in existing_handles:
+                    lines.append(h)
+            with open(ACCOUNTS_FILE, 'w') as f:
+                f.write('\n'.join(lines) + '\n')
+        except Exception as e:
+            print(f"[BlueSky] Failed to save accounts.txt: {e}")
+
+    def add_keyword(self, query: str, limit: int = 20) -> dict:
+        """Add a new search query feed at runtime. Returns the new feed config."""
+        query = query.strip()
+        if not query:
+            return None
+        # Derive a safe id from the query
+        import re as _re
+        feed_id = 'custom_' + _re.sub(r'[^a-z0-9]+', '_', query.lower())[:30]
+        # Don't add duplicates
+        if any(f['query'].lower() == query.lower() for f in self.active_feeds):
+            return None
+        feed = {
+            'id':      feed_id,
+            'name':    query.title(),
+            'type':    'search',
+            'query':   query,
+            'limit':   limit,
+            'enabled': True,
+            'custom':  True,   # marks as user-added
+        }
+        self.active_feeds.append(feed)
+        self._save_custom_feeds()
+        print(f"[BlueSky] Added keyword feed: '{query}'")
+        return feed
+
+    def remove_keyword(self, feed_id: str) -> bool:
+        """Remove a feed by id. Returns True if removed."""
+        before = len(self.active_feeds)
+        self.active_feeds = [f for f in self.active_feeds if f['id'] != feed_id]
+        removed = len(self.active_feeds) < before
+        if removed:
+            self._save_custom_feeds()
+            print(f"[BlueSky] Removed keyword feed: {feed_id}")
+        return removed
+
+    def toggle_keyword(self, feed_id: str) -> bool:
+        """Toggle enabled/disabled on a feed. Returns new enabled state."""
+        for f in self.active_feeds:
+            if f['id'] == feed_id:
+                f['enabled'] = not f['enabled']
+                self._save_custom_feeds()
+                return f['enabled']
+        return False
 
     def add_feed(self, feed_config: Dict) -> bool:
         if any(f['id'] == feed_config['id'] for f in self.active_feeds):

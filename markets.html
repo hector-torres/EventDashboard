@@ -932,7 +932,9 @@
       color: #666; padding: 8px 12px 6px; border-bottom: 1px solid #141414;
       background: #0b0b0b; flex-shrink: 0;
     }
-    .k-col-scroll { flex: 1; overflow-y: auto; }
+    .k-col-scroll { flex: 1; overflow-y: hidden; min-height: 0; }
+    /* Series list keeps scroll since it has no pagination */
+    #mp-series-list { overflow-y: auto; }
 
     /* Category column */
     .k-col-cat  { width: fit-content; min-width: 90px; max-width: 200px; flex-shrink: 0; }
@@ -1201,7 +1203,7 @@
     }
     .mp-col {
       display: flex; flex-direction: column; overflow: hidden;
-      border-right: 1px solid #1a1a1a;
+      border-right: 1px solid #1a1a1a; min-height: 0;
     }
     .mp-col:last-child { border-right: none; }
     .mp-col-header {
@@ -1222,9 +1224,8 @@
 
     /* ── Browse col: cat + series side-by-side ── */
     .mp-browse-inner {
-      flex: 0 0 auto; display: flex; overflow: hidden; min-height: 0;
-      /* Series list: give it a capped portion so markets still get good space */
-      height: 35vh; max-height: 380px;
+      flex: 1; display: flex; overflow: hidden; min-height: 0;
+      max-height: 35%;
     }
     /* .mp-cat-pane removed — category sidebar replaced by pill filters */
     .mp-series-pane {
@@ -1602,7 +1603,7 @@
       </div>
 
       <!-- Match results -->
-      <div class="k-col-scroll" id="mp-match-body" style="flex:1;">
+      <div class="k-col-scroll" id="mp-match-body" style="flex:1;min-height:0;">
         <div style="padding:16px;font-size:10px;color:#222">Loading matches…</div>
       </div>
 
@@ -1662,9 +1663,22 @@
           <button class="strat-day-btn" data-days="0" onclick="stratSetExtremeDays(0,this)">All</button>
           <div class="strat-filter-divider"></div>
           <span class="strat-filter-label">Edge</span>
+          <button class="strat-range-btn" data-thresh="5" onclick="stratSetExtremeThresh(5,this)">≤5¢/≥95¢</button>
           <button class="strat-range-btn active" data-thresh="10" onclick="stratSetExtremeThresh(10,this)">≤10¢/≥90¢</button>
           <button class="strat-range-btn" data-thresh="15" onclick="stratSetExtremeThresh(15,this)">≤15¢/≥85¢</button>
           <button class="strat-range-btn" data-thresh="20" onclick="stratSetExtremeThresh(20,this)">≤20¢/≥80¢</button>
+          <div class="strat-filter-divider"></div>
+          <span class="strat-filter-label">Sort</span>
+          <button class="strat-range-btn" id="strat-sort-extreme" data-sort="extreme" onclick="stratSetExtremeSort('extreme',this)">Extremity</button>
+          <button class="strat-range-btn" id="strat-sort-spread" data-sort="spread" onclick="stratSetExtremeSort('spread',this)">Spread ↑</button>
+          <button class="strat-range-btn active" id="strat-sort-close" data-sort="close" onclick="stratSetExtremeSort('close',this)">Closing ↑</button>
+          <div class="strat-filter-divider"></div>
+          <span class="strat-filter-label">Min Vol</span>
+          <button class="strat-range-btn active" id="strat-vol-0" data-vol="0" onclick="stratSetMinVol(0,this)">Any</button>
+          <button class="strat-range-btn" id="strat-vol-100" data-vol="100" onclick="stratSetMinVol(100,this)">100+</button>
+          <button class="strat-range-btn" id="strat-vol-500" data-vol="500" onclick="stratSetMinVol(500,this)">500+</button>
+          <div class="strat-filter-divider"></div>
+          <button class="strat-range-btn active" id="strat-hide-closed" onclick="stratToggleHideClosed(this)">Hide closed</button>
         </div>
 
         <!-- Signal: Semantic Match + Undecided Price controls -->
@@ -1729,7 +1743,7 @@
 </div><!-- /page -->
 <script>
 const KALSHI_API  = 'http://localhost:5001';
-const MP_PER_PAGE = 20;
+// MP_PER_PAGE declared near init block (dynamically calibrated)
 
 let mpAllSeries      = [];
 let mpSeriesMap      = {};
@@ -2152,7 +2166,7 @@ async function mpRefresh() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const STRAT_FETCH_PER_PAGE = 500;  // markets per API fetch page
-const STRAT_DISPLAY_PER   = 50;   // cards shown per display page
+// STRAT_DISPLAY_PER declared near init block (dynamically calibrated)
 
 let stratActiveTab      = 'extreme';
 let stratExpiryDays     = 3;
@@ -2169,6 +2183,9 @@ let stratTensionMin     = 30;
 let stratTensionMax     = 70;
 let stratExcludedCats   = new Set();
 let stratLastMarkets    = [];
+let stratExtremeSort    = 'close';    // 'extreme' | 'spread' | 'close' — default: soonest first
+let stratExtremeMinVol  = 0;
+let stratHideClosed     = true;
 
 function stratSwitchTab(tab) {
   stratActiveTab = tab;
@@ -2205,9 +2222,44 @@ function stratSetExtremeDays(days, btn) {
 
 function stratSetExtremeThresh(thresh, btn) {
   stratExtremeThresh = thresh;
-  document.querySelectorAll('#strat-extreme-controls .strat-range-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  document.querySelectorAll('#strat-extreme-controls .strat-range-btn[data-thresh]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
   stratRun();
+}
+
+function stratSetExtremeSort(mode, btn) {
+  stratExtremeSort = mode;
+  document.querySelectorAll('#strat-extreme-controls .strat-range-btn[data-sort]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  // Re-sort and re-render current data without re-fetching
+  const resort = [...stratLastMarkets].sort((a, b) => {
+    if (mode === 'spread') {
+      const sa = (stratGetPrice(a) + (a.no_ask||Math.max(0,100-stratGetPrice(a)))) - 100;
+      const sb = (stratGetPrice(b) + (b.no_ask||Math.max(0,100-stratGetPrice(b)))) - 100;
+      return sa - sb;
+    }
+    if (mode === 'close') {
+      const ta = a.close_time ? new Date(a.close_time).getTime() : Infinity;
+      const tb = b.close_time ? new Date(b.close_time).getTime() : Infinity;
+      return ta - tb;
+    }
+    // 'extreme': sort by distance from 50
+    return Math.abs(stratGetPrice(b) - 50) - Math.abs(stratGetPrice(a) - 50);
+  });
+  stratRender(resort);
+}
+
+function stratSetMinVol(vol, btn) {
+  stratExtremeMinVol = vol;
+  document.querySelectorAll('#strat-extreme-controls .strat-range-btn[data-vol]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  stratRender(stratLastMarkets);
+}
+
+function stratToggleHideClosed(btn) {
+  stratHideClosed = !stratHideClosed;
+  if (btn) btn.classList.toggle('active', stratHideClosed);
+  stratRender(stratLastMarkets);
 }
 
 function stratRefresh() { stratRun(); }
@@ -2253,7 +2305,7 @@ async function stratFetchExpiry() {
 }
 
 async function stratFetchExtreme() {
-  // Fetch both low + high sides, all pages, merge & sort by extremity
+  // Fetch both low + high sides, all pages, merge & sort
   const loBase = { min_price: 0, max_price: stratExtremeThresh, per_page: STRAT_FETCH_PER_PAGE };
   const hiBase = { min_price: 100 - stratExtremeThresh, max_price: 100, per_page: STRAT_FETCH_PER_PAGE };
   if (stratExtremeDays > 0) { loBase.max_days = stratExtremeDays; hiBase.max_days = stratExtremeDays; }
@@ -2262,9 +2314,42 @@ async function stratFetchExtreme() {
     stratFetchAllPages(hiBase, null),
   ]);
   const seen = new Set();
-  return [...loAll, ...hiAll]
-    .filter(m => { if (seen.has(m.ticker)) return false; seen.add(m.ticker); return true; })
-    .sort((a, b) => Math.abs(stratGetPrice(b) - 50) - Math.abs(stratGetPrice(a) - 50));
+  let merged = [...loAll, ...hiAll]
+    .filter(m => { if (seen.has(m.ticker)) return false; seen.add(m.ticker); return true; });
+
+  // Apply volume filter
+  if (stratExtremeMinVol > 0) {
+    merged = merged.filter(m => {
+      const vol = m.volume != null ? m.volume
+                : m.volume_24h != null ? m.volume_24h : 0;
+      return vol >= stratExtremeMinVol;
+    });
+  }
+
+  // Apply closed market filter
+  if (stratHideClosed) {
+    const now = Date.now();
+    merged = merged.filter(m => {
+      if (m.close_time && new Date(m.close_time).getTime() < now) return false;
+      if (m.days_left != null && parseFloat(m.days_left) < 0) return false;
+      return true;
+    });
+  }
+
+  // Sort by selected mode
+  return merged.sort((a, b) => {
+    if (stratExtremeSort === 'spread') {
+      const sa = (stratGetPrice(a) + (a.no_ask||Math.max(0,100-stratGetPrice(a)))) - 100;
+      const sb = (stratGetPrice(b) + (b.no_ask||Math.max(0,100-stratGetPrice(b)))) - 100;
+      return sa - sb;
+    }
+    if (stratExtremeSort === 'close') {
+      const ta = a.close_time ? new Date(a.close_time).getTime() : Infinity;
+      const tb = b.close_time ? new Date(b.close_time).getTime() : Infinity;
+      return ta - tb;
+    }
+    return Math.abs(stratGetPrice(b) - 50) - Math.abs(stratGetPrice(a) - 50);
+  });
 }
 
 function stratGetPrice(m) {
@@ -2450,12 +2535,39 @@ function stratRenderCard(m) {
     : Math.max(0, 100 - yes);
 
   const days     = m.days_left != null ? parseFloat(m.days_left) : null;
-  const daysDisp = days != null ? (days < 1 ? '<1' : days < 2 ? days.toFixed(1) : Math.round(days).toString()) : '?';
+  // Use close_time for precise hours/minutes display when < 1 day
+  let daysDisp;
+  if (days == null) {
+    daysDisp = '?';
+  } else if (days < 0) {
+    daysDisp = 'closed';
+  } else if (stratActiveTab === 'extreme' && days < 1 && m.close_time) {
+    const msLeft = new Date(m.close_time).getTime() - Date.now();
+    if (msLeft <= 0) {
+      daysDisp = 'closed';
+    } else {
+      const hLeft = msLeft / 3600000;
+      if (hLeft < 1) {
+        daysDisp = Math.round(hLeft * 60) + 'm';
+      } else {
+        const hWhole = Math.floor(hLeft);
+        const mPart  = Math.round((hLeft - hWhole) * 60);
+        daysDisp = mPart > 0 ? `${hWhole}h ${mPart}m` : `${hWhole}h`;
+      }
+    }
+  } else if (days < 1) {
+    daysDisp = '<1d';
+  } else if (days < 2) {
+    daysDisp = days.toFixed(1) + 'd';
+  } else {
+    daysDisp = Math.round(days) + 'd';
+  }
 
   // Urgency class
   const urgClass = days == null ? 'moderate'
-    : days <= 1 ? 'urgent'
-    : days <= 4 ? 'soon'
+    : days <= 0.25 ? 'urgent'   // < 6 hours
+    : days <= 1    ? 'soon'
+    : days <= 4    ? 'moderate'
     : 'moderate';
 
   // Urgency bar fill: time-based for expiry; price-extremity for extreme (esp. when All selected)
@@ -2504,9 +2616,29 @@ function stratRenderCard(m) {
   const matchBar = (stratActiveTab === 'signal' || stratActiveTab === 'tension')
     ? `<div class="k-score-bar" style="max-width:50px"><div class="k-score-fill" style="width:${Math.round((m._score||0)*100)}%"></div></div>` : '';
   const spread = yes + noAsk;
-  const spreadTag = spread > 100
-    ? `<span class="strat-meta-tag" style="color:#884400">spread ${spread - 100}¢</span>`
-    : '';
+  const spreadCents = Math.max(0, spread - 100);
+
+  // For extreme tab: show spread as % of position cost (underdog side)
+  let spreadTag = '';
+  if (stratActiveTab === 'extreme' && spreadCents >= 0) {
+    const positionCost = yes <= 50 ? yes : noAsk;  // cost of the underdog side
+    const spreadPct = positionCost > 0 ? Math.round(spreadCents / positionCost * 100) : 0;
+    const spreadColor = spreadCents <= 1 ? '#4a8a4a'   // green: tight
+                      : spreadCents <= 3 ? '#cc8800'   // amber: moderate
+                      : '#cc3300';                     // red: wide
+    spreadTag = `<span class="strat-meta-tag" style="color:${spreadColor}" title="Spread as % of underdog position cost">spread ${spreadCents}¢ (${spreadPct}%)</span>`;
+  } else if (spreadCents > 0) {
+    spreadTag = `<span class="strat-meta-tag" style="color:#884400">spread ${spreadCents}¢</span>`;
+  }
+
+  // Fee estimate (Kalshi charges ~3% of profit, min $0.01 per contract)
+  let feeTag = '';
+  if (stratActiveTab === 'extreme') {
+    const profit = yes <= 50 ? (100 - yes) : (100 - noAsk);
+    const feeCents = Math.max(1, Math.round(profit * 0.03));
+    const netProfit = profit - feeCents;
+    feeTag = `<span class="strat-meta-tag" style="color:#555" title="Approx. Kalshi fee (~3% of profit per contract). Net profit per contract after fee.">fee ~${feeCents}¢ · net ${netProfit}¢</span>`;
+  }
 
   return `<div class="strat-card">
     <div class="strat-card-top">
@@ -2516,7 +2648,12 @@ function stratRenderCard(m) {
                style="font-size:15px">${Math.round((m._score||0)*100)}%</div>
              <div class="strat-days-label">match</div>`
           : `<div class="strat-days-num ${urgClass}">${daysDisp}</div>
-             <div class="strat-days-label">days</div>`}
+             <div class="strat-days-label">${
+               daysDisp === 'closed' ? 'closed'
+               : /^\d+m$/.test(daysDisp) ? 'mins'
+               : /^\d+h/.test(daysDisp) ? 'hrs'
+               : 'days'
+             }</div>`}
       </div>
       <div class="strat-card-title">${m.title || m.ticker}</div>
       <div class="strat-prices">
@@ -2536,6 +2673,7 @@ function stratRenderCard(m) {
       ${daysTag}
       ${matchBar}
       ${spreadTag}
+      ${feeTag}
       <a class="k-market-link" href="${url}" target="_blank" style="margin-left:auto">↗ kalshi</a>
     </div>
     <div class="strat-urgency-bar">
@@ -2725,6 +2863,42 @@ function mpUpdateConf() {
   mpFetchMatch(true);   // true = reset to page 1 (user changed threshold)
 }
 
+// ── Calibrate items-per-page from measured body heights ──────────────────────
+// Called once on load (after DOM renders) and on window resize.
+// Sets MP_PER_PAGE and STRAT_DISPLAY_PER dynamically so exactly as many cards
+// as fit in the visible body area are shown — no overflow, no scroll.
+
+let MP_PER_PAGE       = 14;  // will be overridden by calibrate()
+let STRAT_DISPLAY_PER = 11;  // will be overridden by calibrate()
+
+function calibratePerPage() {
+  // Strat body
+  const sb = document.getElementById('strat-body');
+  const sc = sb?.querySelector('.strat-card');
+  if (sb && sc) {
+    const fits = Math.max(1, Math.floor(sb.offsetHeight / sc.offsetHeight));
+    if (fits !== STRAT_DISPLAY_PER) {
+      STRAT_DISPLAY_PER = fits;
+    }
+  }
+  // Match body
+  const mb = document.getElementById('mp-match-body');
+  const mc = mb?.querySelector('.k-market');
+  if (mb && mc) {
+    const fits = Math.max(1, Math.floor(mb.offsetHeight / mc.offsetHeight));
+    if (fits !== MP_PER_PAGE) {
+      MP_PER_PAGE = fits;
+    }
+  }
+}
+
+// Re-calibrate on resize
+window.addEventListener('resize', () => {
+  calibratePerPage();
+  if (stratLastMarkets.length) stratRenderFiltered();
+  mpRenderMatchMarkets();
+});
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 mpUpdatePriceRange();
 mpUpdateDaysRange();
@@ -2735,7 +2909,14 @@ setInterval(mpFetchMatch,   30000);
 setInterval(mpUpdateStatus, 60000);
 
 // Strategy panel
-stratRun();
+stratRun().then(() => {
+  // After first render, calibrate per-page from actual card heights
+  setTimeout(() => {
+    calibratePerPage();
+    if (stratLastMarkets.length) stratRenderFiltered();
+    mpRenderMatchMarkets();
+  }, 100);
+});
 
 // ── Pause / auto-refresh control ─────────────────────────────────────────────
 const PAUSE_DURATION = 5 * 60; // 5 minutes in seconds

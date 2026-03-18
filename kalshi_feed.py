@@ -1,12 +1,12 @@
 """
 Kalshi Feed Manager
-Fetches all open Kalshi prediction markets once per day (at 00:00 UTC).
+Fetches all open Kalshi prediction markets once per hour (at the top of each UTC hour).
 Persists to data/kalshi_markets.json so data survives server restarts.
 
 Cache logic:
-  - On startup: if cache exists and was written since today's 00:00 UTC → use it.
-  - On startup: if cache is from a previous UTC day → pull immediately.
-  - Daily background thread: pulls at next 00:00 UTC, then every 24h.
+  - On startup: if cache exists and was written within the current UTC hour → use it.
+  - On startup: if cache is older than the current hour boundary → pull immediately.
+  - Hourly background thread: pulls at the next :00 UTC, then every hour.
 
 Matching engine (pure stdlib, no external NLP dependencies):
   - Token overlap (Jaccard on word sets) + character n-gram similarity.
@@ -129,6 +129,24 @@ def score_market_against_texts(market: Dict, texts: List[str]) -> float:
 
 # ── Kalshi API fetch ──────────────────────────────────────────────────────────
 
+def _is_open_for_trading(market: Dict, now_utc: datetime) -> bool:
+    """Return True if the market is currently open for trading.
+
+    Kalshi returns markets with status=open that haven't started yet — they have
+    an open_time in the future and show "Begins in N days" on the site.  We exclude
+    those so the dashboard only surfaces markets where you can actually place a trade.
+    If open_time is absent or unparseable we let the market through (fail-open).
+    """
+    open_time_raw = market.get('open_time')
+    if not open_time_raw:
+        return True
+    try:
+        open_dt = datetime.fromisoformat(open_time_raw.replace('Z', '+00:00'))
+        return open_dt <= now_utc
+    except Exception:
+        return True
+
+
 def _fetch_all_open_markets() -> Tuple[List[Dict], Optional[str]]:
     """
     Pull all open markets from Kalshi using cursor pagination.
@@ -146,7 +164,9 @@ def _fetch_all_open_markets() -> Tuple[List[Dict], Optional[str]]:
     markets = []
     cursor  = None
     page    = 0
-    sample_logged = False
+    sample_logged  = False
+    not_yet_open   = 0   # count of pre-open markets filtered out
+    now_utc = datetime.now(timezone.utc)   # snapshot once for the whole fetch
 
     while True:
         params = f'?limit={PAGE_LIMIT}&status=open'
@@ -176,14 +196,20 @@ def _fetch_all_open_markets() -> Tuple[List[Dict], Optional[str]]:
             return markets, last_err
 
         raw_batch = data.get('markets', [])
-        # Filter out blocked parlay series — use raw_batch for pagination control
-        filtered_batch = [
-            m for m in raw_batch
-            if not any(
+        # Filter out blocked parlay series — use raw_batch for pagination control.
+        # Also drop markets whose open_time is in the future ("Begins in N days"):
+        # Kalshi creates these in advance but they are not yet tradeable.
+        filtered_batch = []
+        for m in raw_batch:
+            if any(
                 (m.get('series_ticker') or m.get('event_ticker') or m.get('ticker') or '').upper().startswith(pfx)
                 for pfx in _BLOCKED_SERIES_PREFIXES
-            )
-        ]
+            ):
+                continue
+            if not _is_open_for_trading(m, now_utc):
+                not_yet_open += 1
+                continue
+            filtered_batch.append(m)
         markets.extend(filtered_batch)
         page += 1
 
@@ -201,24 +227,26 @@ def _fetch_all_open_markets() -> Tuple[List[Dict], Optional[str]]:
 
         logger.info(f'[Kalshi] Page {page}: {len(markets)} markets so far…')
 
+    if not_yet_open:
+        logger.info(f'[Kalshi] Dropped {not_yet_open:,} pre-open markets (open_time in future).')
     logger.info(f'[Kalshi] Fetched {len(markets)} open markets total.')
     return markets, None
 
 
 # ── Cache helpers ─────────────────────────────────────────────────────────────
 
-def _today_midnight_utc() -> datetime:
-    """Return today's 00:00:00 UTC."""
+def _current_hour_utc() -> datetime:
+    """Return the start of the current UTC hour (e.g. 14:00:00 UTC)."""
     now = datetime.now(timezone.utc)
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return now.replace(minute=0, second=0, microsecond=0)
 
 
 def _cache_is_fresh(path: str) -> bool:
-    """True if the cache file was written at or after today's 00:00 UTC."""
+    """True if the cache file was written within the current UTC hour."""
     if not os.path.exists(path):
         return False
     mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
-    return mtime >= _today_midnight_utc()
+    return mtime >= _current_hour_utc()
 
 
 def _load_cache(path: str) -> Optional[List[Dict]]:
@@ -471,7 +499,7 @@ class KalshiFeedManager:
                     ).isoformat()
                     self.status = 'ok'
                     logger.info(f'[Kalshi] Loaded {len(cached)} markets + {len(series_cached)} series from cache.')
-                    self._start_daily_thread(pull_now=False)
+                    self._start_hourly_thread(pull_now=False)
                     return
                 else:
                     # Markets cached but no series yet — serve markets immediately,
@@ -512,14 +540,14 @@ class KalshiFeedManager:
                                 self._cat_map = cat_map
                             _save_cache(SERIES_CACHE_FILE, series_list)
                             logger.info(f'[Kalshi] Series enrichment done: {stamped} categories stamped.')
-                        self._start_daily_thread(pull_now=False)
+                        self._start_hourly_thread(pull_now=False)
 
                     threading.Thread(target=_enrich_then_loop, daemon=True).start()
                     return
 
         # Cache missing or stale → pull everything now in background
         self.status = 'fetching'
-        self._start_daily_thread(pull_now=True)
+        self._start_hourly_thread(pull_now=True)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -793,19 +821,19 @@ class KalshiFeedManager:
         _save_cache(CACHE_FILE, markets)
         logger.info(f'[Kalshi] Cache saved: {len(markets)} markets.')
 
-    def _start_daily_thread(self, pull_now: bool) -> None:
-        t = threading.Thread(target=self._daily_loop, args=(pull_now,), daemon=True)
+    def _start_hourly_thread(self, pull_now: bool) -> None:
+        t = threading.Thread(target=self._hourly_loop, args=(pull_now,), daemon=True)
         t.start()
 
-    def _daily_loop(self, pull_now: bool) -> None:
+    def _hourly_loop(self, pull_now: bool) -> None:
         if pull_now:
             self._pull()
 
         while True:
-            # Sleep until next 00:00 UTC
-            now      = datetime.now(timezone.utc)
-            tomorrow = _today_midnight_utc() + timedelta(days=1)
-            wait     = (tomorrow - now).total_seconds()
-            logger.info(f'[Kalshi] Next pull in {wait/3600:.1f}h (at {tomorrow.isoformat()})')
+            # Sleep until the top of the next UTC hour
+            now       = datetime.now(timezone.utc)
+            next_hour = _current_hour_utc() + timedelta(hours=1)
+            wait      = (next_hour - now).total_seconds()
+            logger.info(f'[Kalshi] Next pull in {wait/60:.1f}m (at {next_hour.isoformat()})')
             time.sleep(max(wait, 1))
             self._pull()

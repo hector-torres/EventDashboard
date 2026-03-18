@@ -1191,6 +1191,22 @@
       color: #cc8800; border-color: #664400;
       background: rgba(100,60,0,0.12);
     }
+    .mp-syncing-pill {
+      display: none;
+      align-items: center; gap: 5px;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: #4477dd;
+      border: 1px solid #1a2a55; border-radius: 2px;
+      padding: 3px 9px; background: rgba(30,50,120,0.12);
+      white-space: nowrap;
+    }
+    .mp-syncing-pill.visible { display: flex; }
+    @keyframes mp-spin { to { transform: rotate(360deg); } }
+    .mp-syncing-pill .mp-spin {
+      display: inline-block;
+      animation: mp-spin 1.1s linear infinite;
+      font-style: normal;
+    }
     .mp-subheader-right {
       margin-left: auto; display: flex; align-items: center; gap: 6px;
     }
@@ -1470,6 +1486,7 @@
       <a href="/markets" class="active">Market Dashboard</a>
     </nav>
     <div class="mp-title-right" style="display:flex;align-items:center;gap:10px;">
+      <span class="mp-syncing-pill" id="mp-syncing-pill"><i class="mp-spin">↻</i> Syncing</span>
       <button class="mp-pause-btn" id="mp-pause-btn" onclick="mpTogglePause()">⏸ Pause</button>
       <button class="mp-refresh-btn" onclick="mpRefresh()">↻ Refresh</button>
       <span style="color:#777;font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;">KLTT Holdings</span>
@@ -2150,14 +2167,34 @@ async function mpUpdateStatus() {
     const t = `Data from ${mpAgo(d.last_updated)} · ${(d.count||0).toLocaleString()} total`;
     document.getElementById('mp-status-txt').textContent       = t;
     document.getElementById('mp-status-bar-txt').textContent   = t;
+    const pill = document.getElementById('mp-syncing-pill');
+    if (pill) {
+      if (d.status === 'fetching') {
+        pill.classList.add('visible');
+      } else {
+        pill.classList.remove('visible');
+      }
+    }
   } catch(e) {}
 }
 
 async function mpRefresh() {
+  // Show syncing pill immediately so the user gets instant feedback
+  const pill = document.getElementById('mp-syncing-pill');
+  if (pill) pill.classList.add('visible');
   try {
     await fetch(KALSHI_API + '/api/kalshi/refresh', {method:'POST'});
-    setTimeout(mpUpdateStatus, 3000);
   } catch(e) {}
+  // Poll status every 3s until no longer 'fetching', then do a full status update
+  const pollUntilDone = setInterval(async () => {
+    try {
+      const d = await (await fetch(KALSHI_API + '/api/kalshi/status')).json();
+      if (d.status !== 'fetching') {
+        clearInterval(pollUntilDone);
+        await mpUpdateStatus();
+      }
+    } catch(e) { clearInterval(pollUntilDone); }
+  }, 3000);
 }
 
 

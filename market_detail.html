@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Detail — Event Trading Terminal</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #080808;
+  color: #c0c0c0;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  min-height: 100vh;
+  padding-bottom: 60px;
+}
+
+/* ── Header ── */
+.page-header {
+  background: #0f0f0f;
+  border-bottom: 1px solid #1c1c1c;
+  padding: 0 24px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: sticky; top: 0; z-index: 20;
+}
+.header-back {
+  color: #444; font-size: 15px; text-decoration: none;
+  cursor: pointer; user-select: none;
+  transition: color 0.15s; line-height: 1;
+}
+.header-back:hover { color: #aaa; }
+.header-sep { color: #222; font-size: 14px; }
+.header-brand {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #333;
+}
+.header-ticker {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  color: #4477dd; font-family: monospace; margin-left: 4px;
+}
+.header-refresh {
+  margin-left: auto;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #333; background: none;
+  border: 1px solid #222; padding: 3px 10px; cursor: pointer;
+  border-radius: 2px; transition: color 0.15s, border-color 0.15s;
+}
+.header-refresh:hover { color: #888; border-color: #555; }
+.header-refresh.loading { color: #4477dd; border-color: #1a2a55; }
+
+.accent-line {
+  width: 100%; height: 2px;
+  background: linear-gradient(90deg,
+    transparent 0%, #6b0000 15%, #cc1100 40%,
+    #aa0000 60%, #5a0000 85%, transparent 100%);
+}
+
+/* ── Layout ── */
+.page-body {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Hero card ── */
+.hero {
+  background: #0d0d0d;
+  border: 1px solid #1e1e1e;
+  padding: 22px 24px 18px;
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.hero-left {
+  display: flex; flex-direction: column;
+  align-items: center; flex-shrink: 0;
+  min-width: 72px;
+}
+.hero-yes-price {
+  font-size: 36px; font-weight: 800; letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums; line-height: 1;
+  color: #4a9a4a;
+}
+.hero-yes-label {
+  font-size: 8px; font-weight: 700; color: #1f4a1f;
+  text-transform: uppercase; letter-spacing: 0.14em; margin-top: 3px;
+}
+.hero-info { flex: 1; min-width: 0; }
+.hero-ticker {
+  font-size: 10px; font-weight: 700; color: #4477dd;
+  font-family: monospace; letter-spacing: 0.04em; margin-bottom: 6px;
+}
+.hero-title {
+  font-size: 18px; font-weight: 700; color: #e8e8e8;
+  line-height: 1.35; margin-bottom: 6px;
+}
+.hero-subtitle {
+  font-size: 12px; color: #555; margin-bottom: 12px; line-height: 1.5;
+}
+.hero-tags {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+}
+.hero-tag {
+  font-size: 10px; padding: 2px 8px;
+  background: #111; border: 1px solid #1e1e1e;
+  border-radius: 3px; color: #555;
+}
+.hero-kalshi {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; color: #4a8fff; text-decoration: none;
+  padding: 2px 8px; border: 1px solid #1a3060;
+  border-radius: 3px; background: #0a1628;
+  transition: background 0.15s;
+}
+.hero-kalshi:hover { background: #0f1e3a; }
+.hero-live-dot {
+  display: inline-block; width: 5px; height: 5px;
+  background: #4a9a4a; border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* ── Pricing grid ── */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: #151515;
+  border: 1px solid #1e1e1e;
+}
+.price-cell {
+  background: #0d0d0d;
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.price-cell-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #333;
+}
+.price-cell-value {
+  font-size: 22px; font-weight: 700; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.price-cell-value.yes  { color: #4a9a4a; }
+.price-cell-value.no   { color: #cc4444; }
+.price-cell-value.last { color: #aaa; }
+.price-cell-value.vol  { color: #4477dd; }
+.price-cell-sub {
+  font-size: 10px; color: #444;
+}
+.spread-bar-wrap {
+  height: 3px; background: #1a1a1a; border-radius: 2px;
+  overflow: hidden; margin-top: 3px;
+}
+.spread-bar-fill { height: 100%; border-radius: 2px; }
+
+/* ── Section ── */
+.section { display: flex; flex-direction: column; gap: 10px; }
+.section-hdr {
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid #141414; padding-bottom: 8px;
+}
+.section-title {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #444;
+}
+.section-count {
+  font-size: 9px; color: #2a2a2a;
+  background: #111; border: 1px solid #1a1a1a;
+  border-radius: 3px; padding: 1px 6px;
+}
+
+/* ── Two-col layout for orderbook + chart ── */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 20px;
+  align-items: stretch;
+}
+.two-col > * { display: flex; flex-direction: column; }
+.two-col .chart-wrap { flex: 1; }
+.two-col .ob-outer { flex: 1; }
+
+/* ── Orderbook ── */
+.ob-side { display: flex; flex-direction: column; gap: 2px; }
+.ob-hdr {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #2a2a2a;
+  padding: 0 2px 4px;
+}
+.ob-row {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  align-items: center; gap: 4px; position: relative;
+  padding: 3px 6px; overflow: hidden;
+}
+.ob-row-fill {
+  position: absolute; top: 0; bottom: 0; border-radius: 1px;
+  opacity: 0.12; pointer-events: none;
+}
+.ob-row-fill.yes { background: #4a9a4a; right: 50%; }
+.ob-row-fill.no  { background: #cc4444; left: 50%; }
+.ob-qty { color: #555; text-align: right; font-size: 10px; }
+.ob-qty.yes { text-align: left; }
+.ob-price { color: #888; text-align: center; font-weight: 600; }
+.ob-spread-row {
+  font-size: 9px; text-align: center; color: #333;
+  padding: 4px 0; border-top: 1px solid #111;
+  border-bottom: 1px solid #111; margin: 4px 0;
+}
+
+/* ── Candlestick chart ── */
+.chart-wrap {
+  background: #0d0d0d;
+  border: 1px solid #1a1a1a;
+  padding: 14px 16px 10px;
+}
+.chart-title {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #333; margin-bottom: 10px;
+}
+canvas#price-chart { width: 100%; display: block; }
+.chart-empty {
+  font-size: 11px; color: #2a2a2a; text-align: center;
+  padding: 30px 0;
+}
+
+/* ── Match cards ── */
+.match-list { display: flex; flex-direction: column; gap: 8px; }
+
+.match-card {
+  background: #0c0c0c;
+  border: 1px solid #1a1a1a;
+  padding: 11px 14px;
+  display: flex; gap: 12px; align-items: flex-start;
+  transition: border-color 0.15s;
+}
+.match-card:hover { border-color: #282828; }
+.match-card.ev  { border-left: 2px solid #1a3a1a; }
+.match-card.post { border-left: 2px solid #1a2a3a; }
+
+.match-score-col {
+  flex-shrink: 0; min-width: 40px;
+  display: flex; flex-direction: column; align-items: center; padding-top: 2px;
+}
+.match-score {
+  font-size: 14px; font-weight: 700;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.match-score.high   { color: #4a8fff; }
+.match-score.medium { color: #aa6622; }
+.match-score.low    { color: #333; }
+.match-score-bar-wrap {
+  width: 32px; height: 2px; background: #1a1a1a;
+  border-radius: 2px; margin-top: 4px; overflow: hidden;
+}
+.match-score-bar { height: 100%; border-radius: 2px; background: #2255cc; }
+
+.match-body { flex: 1; min-width: 0; }
+.match-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; margin-bottom: 4px;
+}
+.badge-ev   { color: #3a7a3a; }
+.badge-post { color: #3a5a9a; }
+
+.sev-chip {
+  font-size: 8px; padding: 1px 5px; border-radius: 2px;
+  font-weight: 700; letter-spacing: 0.08em;
+}
+.sev-CRITICAL { background:rgba(180,0,20,.18);  color:#ff4455; border:1px solid rgba(180,0,20,.3); }
+.sev-HIGH     { background:rgba(180,100,0,.18); color:#ffaa33; border:1px solid rgba(180,100,0,.3); }
+.sev-MEDIUM   { background:rgba(100,100,0,.12); color:#aaaa44; border:1px solid rgba(100,100,0,.2); }
+
+.match-text { font-size: 12px; color: #888; line-height: 1.5; margin-bottom: 5px; }
+.match-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+.meta-item  { font-size: 10px; color: #3a3a3a; }
+.meta-item a { color: #4a8fff; text-decoration: none; }
+.meta-item a:hover { text-decoration: underline; }
+
+/* ── States ── */
+.state-loading {
+  display: flex; align-items: center; gap: 10px;
+  color: #333; font-size: 12px; padding: 40px 0; justify-content: center;
+}
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid #1a1a1a; border-top-color: #4477dd;
+  border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.state-error {
+  color: #662222; font-size: 12px;
+  padding: 16px; background: #0e0808;
+  border: 1px solid #2a1a1a; border-radius: 4px;
+}
+.state-empty { color: #2a2a2a; font-size: 11px; padding: 20px 0; }
+
+/* ── Yes/No position toggle ── */
+.pos-toggle {
+  display: flex; gap: 0; margin-bottom: 12px;
+}
+.pos-tab {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; padding: 4px 14px;
+  background: none; border: 1px solid #1e1e1e;
+  cursor: pointer; transition: all 0.15s; color: #2a2a2a;
+}
+.pos-tab:first-child { border-radius: 2px 0 0 2px; }
+.pos-tab:last-child  { border-radius: 0 2px 2px 0; border-left: none; }
+.pos-tab.yes.active  { background: rgba(74,154,74,0.15); color: #4a9a4a; border-color: #2a5a2a; }
+.pos-tab.no.active   { background: rgba(204,68,68,0.12); color: #cc4444; border-color: #5a2a2a; }
+
+/* ── Position detail panel ── */
+.pos-panel { display: none; flex-direction: column; gap: 1px; }
+.pos-panel.active { display: flex; }
+.pos-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 1px; background: #151515; border: 1px solid #1e1e1e;
+}
+.pos-cell {
+  background: #0d0d0d; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.pos-cell-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #333;
+}
+.pos-cell-value {
+  font-size: 20px; font-weight: 700; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.pos-cell-value.yes   { color: #4a9a4a; }
+.pos-cell-value.no    { color: #cc4444; }
+.pos-cell-value.neutral { color: #888; }
+.pos-cell-value.good  { color: #4a9a4a; }
+.pos-cell-value.warn  { color: #cc8800; }
+.pos-cell-value.bad   { color: #cc3300; }
+.pos-cell-sub { font-size: 10px; color: #3a3a3a; line-height: 1.4; }
+
+/* ── Explanation / glossary ── */
+.gloss-toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 9px; color: #2a2a2a; cursor: pointer;
+  margin-left: auto; user-select: none;
+  transition: color 0.15s; letter-spacing: 0.08em;
+}
+.gloss-toggle:hover { color: #555; }
+.gloss-body {
+  display: none; background: #0a0a0a; border: 1px solid #181818;
+  padding: 12px 14px; font-size: 11px; color: #444;
+  line-height: 1.65;
+}
+.gloss-body.open { display: block; }
+.gloss-body strong { color: #666; font-weight: 600; }
+.gloss-body p + p { margin-top: 8px; }
+
+
+/* ── Position sizer ── */
+.sizer-wrap {
+  background: #0d0d0d;
+  border: 1px solid #1e1e1e;
+  padding: 18px 20px;
+}
+.sizer-hdr {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 14px;
+}
+.sizer-title {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #444;
+}
+.sizer-controls {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+}
+.sizer-input-wrap {
+  display: flex; align-items: center; gap: 0;
+  border: 1px solid #252525; background: #111;
+  border-radius: 2px; overflow: hidden;
+}
+.sizer-prefix {
+  padding: 6px 10px; font-size: 13px; font-weight: 700;
+  color: #444; background: #0d0d0d; border-right: 1px solid #1e1e1e;
+  user-select: none;
+}
+.sizer-input {
+  background: none; border: none; outline: none;
+  color: #c0c0c0; font-size: 14px; font-weight: 600;
+  width: 110px; padding: 6px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.sizer-slider-wrap { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.sizer-slider {
+  width: 100%; height: 3px; cursor: pointer;
+  accent-color: #4477dd;
+}
+.sizer-slider-labels {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: #2a2a2a; letter-spacing: 0.04em;
+}
+.sizer-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 1px; background: #151515; border: 1px solid #1e1e1e;
+  margin-bottom: 10px;
+}
+.sizer-cell {
+  background: #0d0d0d; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.sizer-cell-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #2a2a2a;
+}
+.sizer-cell-value {
+  font-size: 16px; font-weight: 700;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.sizer-cell-sub { font-size: 10px; color: #2a2a2a; line-height: 1.35; }
+.sizer-warning {
+  font-size: 11px; padding: 8px 12px;
+  border-radius: 2px; margin-top: 8px; line-height: 1.5;
+}
+.sizer-warning.ok     { background:rgba(74,154,74,0.08); color:#4a7a4a; border:1px solid #1a3a1a; }
+.sizer-warning.warn   { background:rgba(204,136,0,0.08); color:#8a6020; border:1px solid #3a3010; }
+.sizer-warning.impact { background:rgba(204,80,0,0.10); color:#884020; border:1px solid #3a2010; }
+
+/* ── Context callouts ── */
+.context-row {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1px; background: #151515; border: 1px solid #1e1e1e;
+}
+.ctx-cell {
+  background: #0d0d0d; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.ctx-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #2a2a2a;
+}
+.ctx-value {
+  font-size: 18px; font-weight: 700;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.ctx-sub { font-size: 10px; color: #3a3a3a; line-height: 1.4; }
+
+
+/* ── Siblings table (multi-outcome markets) ── */
+.siblings-wrap {
+  background: #0d0d0d;
+  border: 1px solid #1e1e1e;
+  padding: 0;
+  overflow: hidden;
+}
+.siblings-hdr {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid #141414;
+}
+.siblings-title {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #444;
+}
+.siblings-note {
+  font-size: 10px; color: #2a2a2a; margin-left: auto;
+}
+.siblings-table {
+  width: 100%; border-collapse: collapse;
+}
+.siblings-table th {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #2a2a2a;
+  padding: 6px 16px; text-align: left;
+  border-bottom: 1px solid #141414; background: #0a0a0a;
+}
+.siblings-table th.num { text-align: right; }
+.siblings-table td {
+  padding: 7px 16px; font-size: 12px;
+  border-bottom: 1px solid #0f0f0f;
+  vertical-align: middle;
+}
+.siblings-table tr:last-child td { border-bottom: none; }
+.siblings-table tr:hover td { background: #111; }
+.siblings-table tr.self td { background: rgba(68,119,221,0.06); }
+.sib-name { color: #c0c0c0; font-weight: 500; }
+.sib-name a { color: #4a8fff; text-decoration: none; }
+.sib-name a:hover { text-decoration: underline; }
+.sib-self-badge {
+  font-size: 8px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #4477dd;
+  background: rgba(68,119,221,0.12); border: 1px solid #1a3060;
+  border-radius: 2px; padding: 1px 5px; margin-left: 6px;
+  vertical-align: middle;
+}
+.sib-yes { color: #4a9a4a; font-variant-numeric: tabular-nums; text-align: right; }
+.sib-no  { color: #cc4444; font-variant-numeric: tabular-nums; text-align: right; }
+.sib-vol { color: #2a4a7a; font-variant-numeric: tabular-nums; text-align: right;
+           font-size: 11px; }
+.sib-prob-bar {
+  width: 60px; height: 4px; background: #141414;
+  border-radius: 2px; overflow: hidden; display: inline-block;
+  vertical-align: middle; margin-right: 6px;
+}
+.sib-prob-fill { height: 100%; border-radius: 2px; background: #2a6a2a; }
+
+
+/* ── Polymarket comparison table ── */
+.pm-wrap {
+  background: #0d0d0d;
+  border: 1px solid #1e1e1e;
+  overflow: hidden;
+}
+.pm-hdr {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid #141414;
+}
+.pm-title {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #444;
+}
+.pm-logo {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  color: #4455cc; background: rgba(68,85,204,0.1);
+  border: 1px solid #1a2060; border-radius: 2px;
+  padding: 1px 6px;
+}
+.pm-query {
+  font-size: 10px; color: #2a2a2a; margin-left: auto;
+  font-family: monospace;
+}
+.pm-table {
+  width: 100%; border-collapse: collapse;
+}
+.pm-table th {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #2a2a2a;
+  padding: 6px 16px; text-align: left;
+  border-bottom: 1px solid #141414; background: #0a0a0a;
+}
+.pm-table th.num { text-align: right; }
+.pm-table td {
+  padding: 8px 16px; font-size: 12px;
+  border-bottom: 1px solid #0f0f0f; vertical-align: middle;
+}
+.pm-table tr:last-child td { border-bottom: none; }
+.pm-table tr:hover td { background: #0f0f0f; }
+.pm-question { color: #bbb; }
+.pm-question a {
+  color: #7a9aff; text-decoration: none;
+}
+.pm-question a:hover { text-decoration: underline; }
+.pm-score {
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  text-align: right; white-space: nowrap;
+}
+.pm-price {
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+  text-align: right; white-space: nowrap;
+}
+.pm-price.yes  { color: #4a9a4a; }
+.pm-price.no   { color: #cc4444; }
+.pm-price.na   { color: #2a2a2a; }
+.pm-vol { font-size: 11px; color: #2a4a7a; text-align: right;
+          font-variant-numeric: tabular-nums; }
+.pm-end { font-size: 10px; color: #2a2a2a; text-align: right; }
+.pm-score-bar-wrap {
+  width: 36px; height: 3px; background: #1a1a1a;
+  border-radius: 2px; overflow: hidden; display: inline-block;
+  vertical-align: middle; margin-right: 4px;
+}
+.pm-score-bar { height: 100%; border-radius: 2px; background: #2a4aaa; }
+.pm-multi-outcomes {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pm-outcome-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px;
+}
+.pm-outcome-name { color: #666; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-outcome-price { color: #888; font-variant-numeric: tabular-nums;
+  font-weight: 600; flex-shrink: 0; }
+.pm-outcome-bar-wrap {
+  width: 40px; height: 3px; background: #1a1a1a;
+  border-radius: 2px; overflow: hidden; flex-shrink: 0;
+}
+.pm-outcome-bar { height: 100%; border-radius: 2px; background: #3a6a9a; }
+.pm-empty { padding: 20px 16px; font-size: 11px; color: #2a2a2a; }
+.pm-closed-badge {
+  font-size: 8px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; padding: 1px 5px; border-radius: 2px;
+  background: rgba(100,100,100,0.1); color: #444;
+  border: 1px solid #222; margin-left: 6px; vertical-align: middle;
+}
+
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <a class="header-back" onclick="window.close()" title="Close tab">✕</a>
+  <span class="header-sep">|</span>
+  <span class="header-brand">Event Trading Terminal</span>
+  <span class="header-sep">|</span>
+  <span class="header-ticker" id="hdr-ticker">—</span>
+  <button class="header-refresh" id="hdr-refresh" onclick="loadAll()">↻ Refresh</button>
+</div>
+<div class="accent-line"></div>
+
+<div class="page-body" id="page-body">
+  <div class="state-loading"><div class="spinner"></div>Loading market data…</div>
+</div>
+
+<script>
+const params  = new URLSearchParams(window.location.search);
+const TICKER  = (params.get('ticker') || '').toUpperCase();
+
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function ago(iso) {
+  if (!iso) return '';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60)   return Math.round(s) + 's ago';
+  if (s < 3600) return Math.round(s/60) + 'm ago';
+  return Math.round(s/3600) + 'h ago';
+}
+
+function daysLeft(iso) {
+  if (!iso) return null;
+  return (new Date(iso).getTime() - Date.now()) / 86400000;
+}
+
+function fmtDays(d) {
+  if (d == null) return '—';
+  if (d < 0) return 'closed';
+  if (d < 1/24) return Math.round(d * 1440) + 'm';
+  if (d < 1)    return Math.round(d * 24) + 'h';
+  return d.toFixed(1) + 'd';
+}
+
+function scoreClass(s) {
+  if (s >= 0.4) return 'high';
+  if (s >= 0.2) return 'medium';
+  return 'low';
+}
+
+function centsFromDollars(v) {
+  if (v == null) return null;
+  const n = parseFloat(v);
+  return isNaN(n) ? null : Math.round(n * 100);
+}
+
+// Format cents as "$0.XX" — canonical display for all price values
+function c$(cents) {
+  if (cents == null) return '—';
+  return '$' + (cents / 100).toFixed(2);
+}
+
+// Format a dollar amount (e.g. from input)
+function fmtDollars(n) {
+  if (n == null || isNaN(n)) return '—';
+  if (n >= 1000) return '$' + n.toLocaleString(undefined, {maximumFractionDigits:0});
+  return '$' + n.toFixed(2);
+}
+
+// ── Hero + Pricing ────────────────────────────────────────────────────────────
+
+function buildHero(mkt) {
+  const yesAsk = centsFromDollars(mkt.yes_ask_dollars) ?? mkt.yes_ask ?? 50;
+  const yesBid = centsFromDollars(mkt.yes_bid_dollars) ?? mkt.yes_bid;
+  const noAsk  = centsFromDollars(mkt.no_ask_dollars)  ?? mkt.no_ask  ?? 50;
+  const noBid  = centsFromDollars(mkt.no_bid_dollars)  ?? mkt.no_bid;
+  const last   = centsFromDollars(mkt.last_price_dollars) ?? mkt.last_price;
+  const vol    = mkt.volume ?? mkt.volume_fp ?? null;
+  const liq    = mkt.liquidity ?? null;
+  const d      = daysLeft(mkt.close_time || mkt.expiration_time);
+  const spread = (yesAsk != null && noAsk != null) ? Math.max(0, yesAsk + noAsk - 100) : null;
+
+  // Per-side economics
+  const FEE_RATE = 0.03;
+  const yesProfit  = yesAsk != null ? 100 - yesAsk : null;
+  const yesFee     = yesProfit != null ? Math.max(1, Math.round(yesProfit * FEE_RATE)) : null;
+  const yesNet     = yesProfit != null && yesFee != null ? yesProfit - yesFee : null;
+  const yesRetPct  = yesAsk > 0 && yesNet != null ? Math.round(yesNet / yesAsk * 100) : null;
+
+  const noProfit   = noAsk != null ? 100 - noAsk : null;
+  const noFee      = noProfit != null ? Math.max(1, Math.round(noProfit * FEE_RATE)) : null;
+  const noNet      = noProfit != null && noFee != null ? noProfit - noFee : null;
+  const noRetPct   = noAsk > 0 && noNet != null ? Math.round(noNet / noAsk * 100) : null;
+
+  const spreadColor = spread == null ? '#444'
+    : spread <= 1 ? '#4a9a4a'
+    : spread <= 3 ? '#cc8800' : '#cc3300';
+
+  const spreadPct = spread != null && yesAsk > 0
+    ? Math.round(spread / Math.min(yesAsk, noAsk ?? yesAsk) * 100) : null;
+
+  // Kalshi deep link
+  const seriesSlug = (mkt.series_ticker || TICKER.toLowerCase().replace(/-\d{2}[a-z]{3}\d{2}.*/i, ''));
+  const titleSlug  = (mkt.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const kalshiUrl  = `https://kalshi.com/markets/${seriesSlug.toLowerCase()}/${titleSlug}/${TICKER.toLowerCase()}`;
+
+  const volFmt = vol != null
+    ? Number(vol).toLocaleString(undefined, {maximumFractionDigits:0})
+    : '—';
+  const liqFmt = liq != null
+    ? '$' + Number(liq).toLocaleString(undefined, {maximumFractionDigits:0})
+    : '—';
+
+  return `
+    <div class="hero">
+      <div class="hero-left">
+        <div class="hero-yes-price">${yesAsk != null ? c$(yesAsk) : '—'}</div>
+        <div class="hero-yes-label">Yes Ask (cost/contract)</div>
+      </div>
+      <div class="hero-info">
+        <div class="hero-ticker">${esc(mkt.ticker || TICKER)}</div>
+        <div class="hero-title">${esc(mkt.title || TICKER)}</div>
+        ${mkt.subtitle ? `<div class="hero-subtitle">${esc(mkt.subtitle)}</div>` : ''}
+        <div class="hero-tags">
+          ${mkt.category     ? `<span class="hero-tag">${esc(mkt.category)}</span>` : ''}
+          ${mkt.series_ticker ? `<span class="hero-tag">${esc(mkt.series_ticker)}</span>` : ''}
+          <span class="hero-tag">${fmtDays(d)} left</span>
+          <span class="hero-tag"><span class="hero-live-dot"></span>&nbsp;live</span>
+          <a class="hero-kalshi" href="${esc(kalshiUrl)}" target="_blank">↗ Kalshi</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pricing section header with glossary -->
+    <div class="section-hdr" style="margin-bottom:0">
+      <div class="section-title">Pricing</div>
+      <span class="gloss-toggle" onclick="toggleGloss('gloss-pricing')">ⓘ what do these mean?</span>
+    </div>
+    <div class="gloss-body" id="gloss-pricing">
+      <p><strong>Yes Ask / No Ask</strong> — The price to buy a YES or NO contract right now (market ask).
+      Each contract pays $1.00 if it resolves in your favour, so your profit = $1.00 − cost.
+      YES and NO are two sides of the same binary outcome: if you buy both, you spend (YES ask + NO ask)¢
+      and always collect 100¢ — a guaranteed loss equal to the spread.</p>
+      <p><strong>Bid</strong> — The highest price someone is currently willing to pay.
+      Ask − Bid = the bid-ask spread for that side.</p>
+      <p><strong>Spread</strong> — YES ask + NO ask − 100¢. This is the market maker's take.
+      A 1¢ spread is tight (liquid); 5¢+ is wide (illiquid). Colour: green ≤1¢, amber 2–3¢, red ≥4¢.</p>
+      <p><strong>Net profit / Return %</strong> — Profit per contract after Kalshi's ~3% fee on winnings.
+      E.g. buying YES at 30¢: gross profit = 70¢, fee ≈ 2¢, net = 68¢, return = 68/30 = 227%.</p>
+      <p><strong>Volume</strong> — Total contracts traded since the market opened. Higher volume = more
+      price discovery and tighter spreads. <strong>Liquidity</strong> is the total dollar value resting
+      in the order book on both sides.</p>
+    </div>
+
+    <!-- Yes / No toggle -->
+    <div class="pos-toggle">
+      <button class="pos-tab yes active" onclick="switchPos('yes')">YES position</button>
+      <button class="pos-tab no"         onclick="switchPos('no')">NO position</button>
+    </div>
+
+    <!-- YES panel -->
+    <div class="pos-panel active" id="pos-yes">
+      <div class="pos-grid">
+        <div class="pos-cell">
+          <div class="pos-cell-label">Yes Ask (entry)</div>
+          <div class="pos-cell-value yes">${yesAsk != null ? c$(yesAsk) : '—'}</div>
+          <div class="pos-cell-sub">Cost per contract<br>${yesBid != null ? 'Bid: ' + c$(yesBid) : ''}</div>
+        </div>
+        <div class="pos-cell">
+          <div class="pos-cell-label">Gross Profit</div>
+          <div class="pos-cell-value neutral">${yesProfit != null ? c$(yesProfit) : '—'}</div>
+          <div class="pos-cell-sub">If YES resolves · per contract</div>
+        </div>
+        <div class="pos-cell">
+          <div class="pos-cell-label">Fee · Net Profit</div>
+          <div class="pos-cell-value ${yesNet != null && yesNet > 30 ? 'good' : yesNet != null && yesNet > 10 ? 'warn' : 'neutral'}">
+            ${yesFee != null ? '~' + c$(yesFee) : '—'} · ${yesNet != null ? c$(yesNet) : '—'}
+          </div>
+          <div class="pos-cell-sub">~3% of profit · after fee</div>
+        </div>
+        <div class="pos-cell">
+          <div class="pos-cell-label">Return %</div>
+          <div class="pos-cell-value ${yesRetPct != null && yesRetPct > 100 ? 'good' : yesRetPct != null && yesRetPct > 30 ? 'warn' : 'neutral'}">
+            ${yesRetPct != null ? yesRetPct + '%' : '—'}
+          </div>
+          <div class="pos-cell-sub">Net / cost · if YES wins</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NO panel -->
+    <div class="pos-panel" id="pos-no">
+      <div class="pos-grid">
+        <div class="pos-cell">
+          <div class="pos-cell-label">No Ask (entry)</div>
+          <div class="pos-cell-value no">${noAsk != null ? c$(noAsk) : '—'}</div>
+          <div class="pos-cell-sub">Cost per contract<br>${noBid != null ? 'Bid: ' + c$(noBid) : ''}</div>
+        </div>
+        <div class="pos-cell">
+          <div class="pos-cell-label">Gross Profit</div>
+          <div class="pos-cell-value neutral">${noProfit != null ? c$(noProfit) : '—'}</div>
+          <div class="pos-cell-sub">If NO resolves · per contract</div>
+        </div>
+        <div class="pos-cell">
+          <div class="pos-cell-label">Fee · Net Profit</div>
+          <div class="pos-cell-value ${noNet != null && noNet > 30 ? 'good' : noNet != null && noNet > 10 ? 'warn' : 'neutral'}">
+            ${noFee != null ? '~' + c$(noFee) : '—'} · ${noNet != null ? c$(noNet) : '—'}
+          </div>
+          <div class="pos-cell-sub">~3% of profit · after fee</div>
+        </div>
+        <div class="pos-cell">
+          <div class="pos-cell-label">Return %</div>
+          <div class="pos-cell-value ${noRetPct != null && noRetPct > 100 ? 'good' : noRetPct != null && noRetPct > 30 ? 'warn' : 'neutral'}">
+            ${noRetPct != null ? noRetPct + '%' : '—'}
+          </div>
+          <div class="pos-cell-sub">Net / cost · if NO wins</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shared spread + volume row -->
+    <div class="pos-grid" style="margin-top:1px">
+      <div class="pos-cell" style="grid-column:span 2">
+        <div class="pos-cell-label">Spread</div>
+        <div class="pos-cell-value" style="color:${spreadColor};font-size:20px">
+          ${spread != null ? c$(spread) : '—'}
+          ${spreadPct != null ? '<span style="font-size:13px;font-weight:400;color:' + spreadColor + '"> (' + spreadPct + '% of position)</span>' : ''}
+        </div>
+        <div class="pos-cell-sub">YES ask + NO ask − 100¢ · market maker take</div>
+        ${spread != null ? `<div class="spread-bar-wrap" style="max-width:200px;margin-top:6px">
+          <div class="spread-bar-fill" style="width:${Math.min(100, spread * 8)}%;background:${spreadColor}"></div>
+        </div>` : ''}
+      </div>
+      <div class="pos-cell">
+        <div class="pos-cell-label">Volume</div>
+        <div class="pos-cell-value vol" style="font-size:20px">${volFmt}</div>
+        <div class="pos-cell-sub">Total contracts traded</div>
+      </div>
+      <div class="pos-cell">
+        <div class="pos-cell-label">Liquidity</div>
+        <div class="pos-cell-value" style="color:#4477dd;font-size:20px">${liqFmt}</div>
+        <div class="pos-cell-sub">${last != null ? 'Last trade: ' + c$(last) : 'Resting order book value'}</div>
+      </div>
+    </div>
+  `;
+}
+
+
+// ── Context callouts (break-even, implied prob, time value) ───────────────────
+
+function buildContext(mkt) {
+  const yesAsk = centsFromDollars(mkt.yes_ask_dollars) ?? mkt.yes_ask ?? 50;
+  const noAsk  = centsFromDollars(mkt.no_ask_dollars)  ?? mkt.no_ask  ?? 50;
+  const last   = centsFromDollars(mkt.last_price_dollars) ?? mkt.last_price;
+  const d      = daysLeft(mkt.close_time || mkt.expiration_time);
+
+  // Break-even = ask price (implied probability you need to profit)
+  const beYes = yesAsk;
+  const beNo  = noAsk;
+
+  // Last-trade drift
+  const drift    = last != null ? yesAsk - last : null;
+  const driftDir = drift == null ? '' : drift > 0 ? '▲ moved up' : drift < 0 ? '▼ moved down' : '— unchanged';
+  const driftCol = drift == null ? '#444' : drift > 0 ? '#cc8800' : drift < 0 ? '#4a9a4a' : '#555';
+
+  // Time value warning
+  let timeNote = '';
+  if (d != null && d >= 0) {
+    if      (d < 1/24)  timeNote = 'Closes in < 1h — high gamma, prices may move fast';
+    else if (d < 1)     timeNote = 'Closes today — expect accelerated price movement';
+    else if (d > 60)    timeNote = 'Long-dated — more time for the situation to change';
+  }
+
+  // Extreme price note
+  let extremeNote = '';
+  if (yesAsk >= 90)      extremeNote = 'Near-certain YES — limited upside, consider NO';
+  else if (yesAsk <= 10) extremeNote = 'Near-certain NO — limited upside on YES side';
+
+  return `<div class="context-row">
+    <div class="ctx-cell">
+      <div class="ctx-label">Break-Even Probability</div>
+      <div class="ctx-value" style="color:#4477dd">${c$(beYes)} YES · ${c$(beNo)} NO</div>
+      <div class="ctx-sub">You need to believe YES > ${beYes}% likely to have edge on the YES side,
+      or NO > ${beNo}% likely on the NO side.</div>
+    </div>
+    <div class="ctx-cell">
+      <div class="ctx-label">Price vs Last Trade</div>
+      <div class="ctx-value" style="color:${driftCol}">
+        ${drift != null ? (drift > 0 ? '+' : '') + c$(drift) : '—'}
+      </div>
+      <div class="ctx-sub">${driftDir}${drift != null ? ' since last trade (' + c$(last) + ')' : ''}
+      ${Math.abs(drift||0) >= 5 ? ' — significant recent move' : ''}</div>
+    </div>
+    <div class="ctx-cell">
+      <div class="ctx-label">Time Context</div>
+      <div class="ctx-value" style="color:#888">${fmtDays(d)}</div>
+      <div class="ctx-sub">${timeNote || extremeNote || 'Until market closes'}</div>
+    </div>
+  </div>`;
+}
+
+// ── Position sizer ────────────────────────────────────────────────────────────
+
+// Module-level state so sizer can reference latest market + book data
+let _sizerMkt = null;
+let _sizerOb  = null;
+let _sizerSide = 'yes';   // tracks which panel is active
+
+function buildSizer(mkt, ob) {
+  _sizerMkt  = mkt;
+  _sizerOb   = ob;
+  _sizerSide = 'yes';
+  return `
+  <div class="sizer-wrap">
+    <div class="sizer-hdr">
+      <div class="sizer-title">Position Sizer</div>
+      <span class="gloss-toggle" onclick="toggleGloss('gloss-sizer')">ⓘ how to use</span>
+    </div>
+    <div class="gloss-body" id="gloss-sizer">
+      <p>Enter any dollar amount ($1–$100,000) to see exactly how many contracts you could buy,
+      your total cost, gross profit, fees, and net return if the contract resolves in your favour.
+      The sizer respects the current YES/NO toggle above.</p>
+      <p><strong>Fillable?</strong> — checks whether the order book has enough resting quantity
+      at the best ask to fill your order without walking up price levels.
+      <strong>Price impact</strong> appears if your order would consume multiple price levels,
+      showing the blended average fill price you'd actually pay.</p>
+    </div>
+    <div class="sizer-controls">
+      <div class="sizer-input-wrap">
+        <span class="sizer-prefix">$</span>
+        <input class="sizer-input" id="sizer-input" type="number"
+          min="1" max="100000" step="1" value="100"
+          oninput="sizerSync('input')">
+      </div>
+      <div class="sizer-slider-wrap">
+        <input class="sizer-slider" id="sizer-slider" type="range"
+          min="0" max="1000" step="1" value="461"
+          oninput="sizerSync('slider')">
+        <div class="sizer-slider-labels">
+          <span>$1</span><span>$100</span><span>$1k</span><span>$10k</span><span>$100k</span>
+        </div>
+      </div>
+    </div>
+    <div class="sizer-grid" id="sizer-grid">
+      <!-- filled by sizerCalc() -->
+    </div>
+    <div id="sizer-warning"></div>
+  </div>`;
+}
+
+// Log-scale mapping: slider 0–1000 → $1–$100,000
+function sliderToDollars(v) {
+  return Math.round(Math.pow(10, v / 1000 * 5));   // 10^0 to 10^5
+}
+function dollarsToSlider(d) {
+  return Math.round(Math.log10(Math.max(1, d)) / 5 * 1000);
+}
+
+function sizerSync(source) {
+  const inp = document.getElementById('sizer-input');
+  const sld = document.getElementById('sizer-slider');
+  let dollars;
+  if (source === 'input') {
+    dollars = Math.max(1, Math.min(100000, parseFloat(inp.value) || 1));
+    sld.value = dollarsToSlider(dollars);
+  } else {
+    dollars = sliderToDollars(parseInt(sld.value));
+    inp.value = dollars;
+  }
+  sizerCalc(dollars);
+}
+
+function sizerCalc(dollars) {
+  if (!_sizerMkt) return;
+
+  const side   = _sizerSide;
+  const yesAsk = centsFromDollars(_sizerMkt.yes_ask_dollars) ?? _sizerMkt.yes_ask ?? 50;
+  const noAsk  = centsFromDollars(_sizerMkt.no_ask_dollars)  ?? _sizerMkt.no_ask  ?? 50;
+  const askCents = side === 'yes' ? yesAsk : noAsk;
+
+  if (!askCents || askCents <= 0) return;
+
+  const askDollars   = askCents / 100;
+  const contracts    = Math.floor(dollars / askDollars);
+  const totalCost    = contracts * askDollars;
+  const grossProfit  = contracts * (1 - askDollars);
+  // Kalshi fee: 3% of profit per contract, minimum $0.01 per contract
+  const feePerContract = Math.max(0.01, (1 - askDollars) * 0.03);
+  const fee          = contracts * feePerContract;
+  const netProfit    = grossProfit - fee;
+  const returnPct    = totalCost > 0 ? (netProfit / totalCost * 100) : 0;
+
+  // Orderbook fill check
+  const ob = _sizerOb || {};
+  const levels = side === 'yes'
+    ? (ob.yes_dollars || ob.yes || [])
+    : (ob.no_dollars  || ob.no  || []);
+
+  let fillable = null, avgFillCents = null, warning = '', warnClass = '';
+
+  if (levels.length > 0) {
+    let remaining = contracts;
+    let totalSpend = 0;
+    let levelsConsumed = 0;
+    for (const [price, qty] of levels) {
+      if (remaining <= 0) break;
+      const priceCents = parseFloat(price) < 1
+        ? Math.round(parseFloat(price) * 100)
+        : Math.round(parseFloat(price));
+      const available  = parseFloat(qty);
+      const take       = Math.min(remaining, available);
+      totalSpend  += take * priceCents;
+      remaining   -= take;
+      levelsConsumed++;
+    }
+    fillable = remaining <= 0;
+    if (contracts > 0) avgFillCents = Math.round(totalSpend / contracts);
+
+    if (!fillable) {
+      const shortage = remaining;
+      warnClass = 'warn';
+      warning = `⚠ Insufficient depth — book only covers ${contracts - shortage} of ${contracts} contracts at current levels. You may need to place a limit order or split across sessions.`;
+    } else if (levelsConsumed > 1) {
+      const slippage = avgFillCents - askCents;
+      warnClass = 'impact';
+      warning = `⚡ Price impact — order walks ${levelsConsumed} price levels. Blended avg fill: ${c$(avgFillCents)} (vs best ask ${c$(askCents)}, +${c$(slippage)} slippage).`;
+    } else {
+      warnClass = 'ok';
+      warning = `✓ Fillable at best ask (${c$(askCents)}) with no price impact.`;
+    }
+  }
+
+  const grid = document.getElementById('sizer-grid');
+  const warn = document.getElementById('sizer-warning');
+  if (!grid) return;
+
+  const retColor   = returnPct > 100 ? '#4a9a4a' : returnPct > 30 ? '#cc8800' : '#888';
+  const impliedProb = askCents;
+  const probNote = impliedProb <= 5
+    ? `${impliedProb}% — very unlikely per market; high return if right`
+    : impliedProb >= 90
+    ? `${impliedProb}% — near-certain; limited upside`
+    : `${impliedProb}% market-implied probability`;
+
+  grid.innerHTML = `
+    <div class="sizer-cell">
+      <div class="sizer-cell-label">Contracts</div>
+      <div class="sizer-cell-value" style="color:#c0c0c0">${contracts.toLocaleString()}</div>
+      <div class="sizer-cell-sub">@ ${c$(askCents)} · ${probNote}</div>
+    </div>
+    <div class="sizer-cell">
+      <div class="sizer-cell-label">Total Cost</div>
+      <div class="sizer-cell-value" style="color:${side==='yes'?'#4a9a4a':'#cc4444'}">${fmtDollars(totalCost)}</div>
+      <div class="sizer-cell-sub">Actual spend${avgFillCents && avgFillCents !== askCents ? ' (blended avg)' : ''}</div>
+    </div>
+    <div class="sizer-cell">
+      <div class="sizer-cell-label">Gross Profit</div>
+      <div class="sizer-cell-value" style="color:#888">${fmtDollars(grossProfit)}</div>
+      <div class="sizer-cell-sub">If ${side.toUpperCase()} resolves</div>
+    </div>
+    <div class="sizer-cell">
+      <div class="sizer-cell-label">Total Fees</div>
+      <div class="sizer-cell-value" style="color:#555">~${fmtDollars(fee)}</div>
+      <div class="sizer-cell-sub">~3% of profit · min $0.01/contract</div>
+    </div>
+    <div class="sizer-cell">
+      <div class="sizer-cell-label">Net Profit · Return</div>
+      <div class="sizer-cell-value" style="color:${retColor}">${fmtDollars(netProfit)} · ${returnPct.toFixed(1)}%</div>
+      <div class="sizer-cell-sub">After fees · on invested capital</div>
+    </div>
+  `;
+
+  if (warn) warn.innerHTML = warning
+    ? `<div class="sizer-warning ${warnClass}">${warning}</div>` : '';
+}
+
+
+// Toggle Yes/No position tab
+function switchPos(side) {
+  document.getElementById('pos-yes').classList.toggle('active', side === 'yes');
+  document.getElementById('pos-no').classList.toggle('active', side === 'no');
+  document.querySelectorAll('.pos-tab').forEach(b => b.classList.remove('active'));
+  document.querySelector('.pos-tab.' + side)?.classList.add('active');
+  _sizerSide = side;
+  const inp = document.getElementById('sizer-input');
+  if (inp) sizerCalc(parseFloat(inp.value) || 100);
+}
+
+// Toggle glossary visibility
+function toggleGloss(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('open');
+  const btn = el.previousElementSibling?.querySelector('.gloss-toggle');
+  if (btn) btn.textContent = el.classList.contains('open') ? 'ⓘ hide' : 'ⓘ what do these mean?';
+}
+
+
+// ── Orderbook ─────────────────────────────────────────────────────────────────
+
+function buildOrderbook(ob) {
+  if (!ob || (!ob.yes && !ob.no && !ob.yes_dollars && !ob.no_dollars)) {
+    return `<div class="state-empty">No orderbook data available</div>`;
+  }
+
+  // Kalshi returns either integer cent arrays or _dollars arrays
+  // Format: [[price, size], ...] sorted from inner (best) to outer
+  const yesLevels = (ob.yes_dollars || ob.yes || []).slice(0, 8);
+  const noLevels  = (ob.no_dollars  || ob.no  || []).slice(0, 8);
+
+  const fmtPrice = (p) => {
+    const n = parseFloat(p);
+    if (isNaN(n)) return '—';
+    return c$(n < 1 ? Math.round(n * 100) : Math.round(n));
+  };
+  const fmtQty = (q) => {
+    const n = parseFloat(q);
+    if (isNaN(n)) return '—';
+    return n >= 1000 ? (n/1000).toFixed(1) + 'k' : Math.round(n).toString();
+  };
+
+  const maxQty = Math.max(
+    ...yesLevels.map(l => parseFloat(l[1]) || 0),
+    ...noLevels.map(l => parseFloat(l[1]) || 0),
+    1
+  );
+
+  const rows = Math.max(yesLevels.length, noLevels.length, 5);
+  let html = `
+    <div class="section-hdr" style="margin-bottom:0">
+      <div class="section-title">Order Book</div>
+      <span class="gloss-toggle" onclick="toggleGloss('gloss-ob')">ⓘ what is this?</span>
+    </div>
+    <div class="gloss-body" id="gloss-ob">
+      <p><strong>Order book</strong> — a live list of outstanding buy orders (bids) on both sides.
+      Each row shows a price level and how many contracts are available there.
+      The depth bars show relative size: wider = more contracts at that level.</p>
+      <p>YES and NO prices at the same row are complementary — if YES is 60¢, the NO equivalent
+      is ~40¢. A deep, evenly balanced book means the market is well-supported on both sides
+      and large trades won't move the price much.</p>
+    </div>
+    <div class="ob-outer" style="background:#0d0d0d;border:1px solid #1a1a1a;padding:12px 14px;flex:1;">
+      <div class="ob-hdr">
+        <span>Qty (YES)</span><span>Price</span><span style="text-align:right">Qty (NO)</span>
+      </div>`;
+
+  for (let i = 0; i < rows; i++) {
+    const yl = yesLevels[i];
+    const nl = noLevels[i];
+    const yQty  = yl ? parseFloat(yl[1]) : 0;
+    const nQty  = nl ? parseFloat(nl[1]) : 0;
+    const yFill = Math.round(yQty / maxQty * 100);
+    const nFill = Math.round(nQty / maxQty * 100);
+
+    html += `<div class="ob-row">
+      <div class="ob-row-fill yes" style="width:${yFill}%"></div>
+      <div class="ob-row-fill no"  style="width:${nFill}%"></div>
+      <div class="ob-qty yes">${yl ? fmtQty(yl[1]) : ''}</div>
+      <div class="ob-price">${yl ? fmtPrice(yl[0]) : (nl ? fmtPrice(100 - parseFloat(nl[0])*100||nl[0]) : '—')}</div>
+      <div class="ob-qty" style="text-align:right">${nl ? fmtQty(nl[1]) : ''}</div>
+    </div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+// ── Price chart ───────────────────────────────────────────────────────────────
+
+function buildChart(candles) {
+  if (!candles || candles.length === 0) {
+    return `<div class="chart-wrap">
+      <div class="chart-title">Yes Price — Last 30 Days</div>
+      <div class="chart-empty">No price history available</div>
+    </div>`;
+  }
+
+  // Extract close prices and dates from candlestick objects
+  // Kalshi candlestick shape: {end_period_ts, yes_ask:{close,...}, yes_bid:{close,...}, ...}
+  const pts = candles
+    .map(c => {
+      const ts    = (c.end_period_ts || c.ts) * 1000;
+      const close = c.yes_ask?.close ?? c.yes_bid?.close ?? c.close ?? null;
+      return { ts, close: close != null ? Math.round(parseFloat(close) * 100) : null };
+    })
+    .filter(p => p.close != null)
+    .sort((a, b) => a.ts - b.ts);
+
+  if (pts.length === 0) {
+    return `<div class="chart-wrap">
+      <div class="chart-title">Yes Price — Last 30 Days</div>
+      <div class="chart-empty">No price history data</div>
+    </div>`;
+  }
+
+  const W = 600, H = 120, PAD = { t: 8, r: 8, b: 24, l: 32 };
+  const cW = W - PAD.l - PAD.r;
+  const cH = H - PAD.t - PAD.b;
+
+  const minP = Math.max(0,   Math.min(...pts.map(p => p.close)) - 5);
+  const maxP = Math.min(100, Math.max(...pts.map(p => p.close)) + 5);
+  const rangeP = maxP - minP || 1;
+
+  const xOf = (i) => PAD.l + (i / (pts.length - 1 || 1)) * cW;
+  const yOf = (v) => PAD.t + cH - ((v - minP) / rangeP) * cH;
+
+  // Build SVG polyline path
+  const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(p.close).toFixed(1)}`).join(' ');
+  const fillD = pathD + ` L${xOf(pts.length-1).toFixed(1)},${(PAD.t+cH).toFixed(1)} L${xOf(0).toFixed(1)},${(PAD.t+cH).toFixed(1)} Z`;
+
+  // Y-axis labels
+  const yLabels = [minP, Math.round((minP+maxP)/2), maxP].map(v => ({
+    v, y: yOf(v)
+  }));
+
+  // X-axis labels (first, middle, last)
+  const xLabels = [0, Math.floor((pts.length-1)/2), pts.length-1].map(i => ({
+    x: xOf(i),
+    label: new Date(pts[i].ts).toLocaleDateString('en-US', {month:'short', day:'numeric'})
+  }));
+
+  // Current price dot
+  const last = pts[pts.length - 1];
+  const dotX = xOf(pts.length - 1);
+  const dotY = yOf(last.close);
+
+  return `<div class="chart-wrap">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <div class="chart-title" style="margin-bottom:0">Yes Price — Last 30 Days
+        <span style="color:#4a9a4a;margin-left:8px;font-weight:400">${c$(last.close)} now</span>
+      </div>
+      <span class="gloss-toggle" style="margin-left:auto" onclick="toggleGloss('gloss-chart')">ⓘ what is this?</span>
+    </div>
+    <div class="gloss-body" id="gloss-chart" style="margin-bottom:8px">
+      <p><strong>Price history</strong> — daily closing YES ask price over the last 30 days.
+      A rising line means the market is pricing this event as increasingly likely.
+      A flat line near 50¢ means the market sees it as a coin flip with little new information.
+      Sharp moves often correspond to breaking news.</p>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;overflow:visible">
+      <defs>
+        <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#2a6a2a" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="#2a6a2a" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <!-- Grid lines -->
+      ${yLabels.map(l => `<line x1="${PAD.l}" y1="${l.y.toFixed(1)}" x2="${(PAD.l+cW).toFixed(1)}" y2="${l.y.toFixed(1)}" stroke="#181818" stroke-width="1"/>`).join('')}
+      <!-- Fill area -->
+      <path d="${fillD}" fill="url(#chartFill)"/>
+      <!-- Line -->
+      <path d="${pathD}" fill="none" stroke="#4a9a4a" stroke-width="1.5" stroke-linejoin="round"/>
+      <!-- Current price dot -->
+      <circle cx="${dotX.toFixed(1)}" cy="${dotY.toFixed(1)}" r="3" fill="#4a9a4a"/>
+      <!-- Y labels -->
+      ${yLabels.map(l => `<text x="${(PAD.l-4).toFixed(1)}" y="${(l.y+3).toFixed(1)}" font-size="9" fill="#2a2a2a" text-anchor="end" font-family="monospace">${c$(l.v)}</text>`).join('')}
+      <!-- X labels -->
+      ${xLabels.map(l => `<text x="${l.x.toFixed(1)}" y="${(H-4)}" font-size="9" fill="#2a2a2a" text-anchor="middle" font-family="sans-serif">${l.label}</text>`).join('')}
+    </svg>
+  </div>`;
+}
+
+
+// ── Siblings table (multi-outcome markets) ───────────────────────────────────
+
+function buildSiblings(siblings, selfMkt) {
+  // Only show if there are other outcomes in this event
+  if (!siblings || siblings.length === 0) return '';
+
+  const selfTicker  = (selfMkt.ticker || '').toUpperCase();
+  const selfYesAsk  = centsFromDollars(selfMkt.yes_ask_dollars) ?? selfMkt.yes_ask ?? 0;
+  const selfSubtitle = selfMkt.subtitle || selfMkt.yes_sub_title || selfTicker;
+
+  // Build combined list including self for the full picture
+  const all = [
+    {
+      ticker:          selfTicker,
+      subtitle:        selfSubtitle,
+      yes_ask_dollars: selfMkt.yes_ask_dollars,
+      yes_ask:         selfMkt.yes_ask,
+      no_ask_dollars:  selfMkt.no_ask_dollars,
+      no_ask:          selfMkt.no_ask,
+      volume:          selfMkt.volume ?? selfMkt.volume_fp,
+      last_price_dollars: selfMkt.last_price_dollars,
+      isSelf: true,
+    },
+    ...siblings.map(s => ({ ...s, isSelf: false })),
+  ].sort((a, b) => {
+    const pa = centsFromDollars(a.yes_ask_dollars) ?? a.yes_ask ?? 0;
+    const pb = centsFromDollars(b.yes_ask_dollars) ?? b.yes_ask ?? 0;
+    return pb - pa;  // highest probability first
+  });
+
+  const rows = all.map(s => {
+    const yesC  = centsFromDollars(s.yes_ask_dollars) ?? s.yes_ask ?? null;
+    const noC   = centsFromDollars(s.no_ask_dollars)  ?? s.no_ask  ?? null;
+    const vol   = s.volume != null
+      ? Number(s.volume).toLocaleString(undefined, {maximumFractionDigits: 0})
+      : '—';
+    const name  = s.subtitle || s.ticker;
+    const link  = s.isSelf
+      ? `<span class="sib-name">${esc(name)}<span class="sib-self-badge">this market</span></span>`
+      : `<span class="sib-name"><a href="/market_detail?ticker=${encodeURIComponent(s.ticker)}" target="_blank">${esc(name)}</a></span>`;
+    const bar   = yesC != null
+      ? `<span class="sib-prob-bar"><span class="sib-prob-fill" style="width:${yesC}%"></span></span>`
+      : '';
+
+    return `<tr class="${s.isSelf ? 'self' : ''}">
+      <td>${link}</td>
+      <td class="sib-yes">${bar}${yesC != null ? c$(yesC) : '—'}</td>
+      <td class="sib-no">${noC != null ? c$(noC) : '—'}</td>
+      <td class="sib-vol">${vol}</td>
+    </tr>`;
+  }).join('');
+
+  // Sum of all YES asks — should be near 100¢ for a well-formed mutually exclusive event
+  const totalProb = all.reduce((acc, s) => {
+    return acc + (centsFromDollars(s.yes_ask_dollars) ?? s.yes_ask ?? 0);
+  }, 0);
+
+  return `<div class="siblings-wrap">
+    <div class="siblings-hdr">
+      <div class="siblings-title">All Outcomes in This Event</div>
+      <span class="siblings-note">
+        ${all.length} outcome${all.length !== 1 ? 's' : ''} ·
+        implied total ${totalProb}¢
+        ${Math.abs(totalProb - 100) > 15 ? '· <span style="color:#cc8800">spreads inflate total above 100¢</span>' : ''}
+      </span>
+    </div>
+    <table class="siblings-table">
+      <thead>
+        <tr>
+          <th>Outcome</th>
+          <th class="num">YES Ask</th>
+          <th class="num">NO Ask</th>
+          <th class="num">Volume</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+
+// ── Semantic matches ──────────────────────────────────────────────────────────
+
+function buildMatches(matches) {
+  if (!matches || !matches.length) {
+    return `<div class="state-empty">No semantic matches above threshold</div>`;
+  }
+
+  const eventMatches = matches.filter(m => m.source === 'event');
+  const postMatches  = matches.filter(m => m.source === 'post');
+
+  function renderEvent(m) {
+    const sev = m.severity
+      ? `<span class="sev-chip sev-${m.severity}">${m.severity}</span>` : '';
+    const strat = m.strategy === 'keyword_cluster' ? '🔑 keyword'
+                : m.strategy === 'velocity_spike'  ? '📈 spike' : (m.strategy || '');
+    return `<div class="match-card ev">
+      <div class="match-score-col">
+        <div class="match-score ${scoreClass(m.score)}">${m.score.toFixed(2)}</div>
+        <div class="match-score-bar-wrap">
+          <div class="match-score-bar" style="width:${Math.min(100,Math.round(m.score*150))}%"></div>
+        </div>
+      </div>
+      <div class="match-body">
+        <div class="match-badge badge-ev">▲ Detected Event &nbsp;${sev}</div>
+        <div class="match-text">${esc(m.text)}</div>
+        <div class="match-meta">
+          ${strat ? `<span class="meta-item">${strat}</span>` : ''}
+          ${m.keyword    ? `<span class="meta-item">keyword: ${esc(m.keyword)}</span>` : ''}
+          ${m.post_count ? `<span class="meta-item">${m.post_count} posts</span>` : ''}
+          ${m.detected_at ? `<span class="meta-item">${ago(m.detected_at)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderPost(m) {
+    return `<div class="match-card post">
+      <div class="match-score-col">
+        <div class="match-score ${scoreClass(m.score)}">${m.score.toFixed(2)}</div>
+        <div class="match-score-bar-wrap">
+          <div class="match-score-bar" style="width:${Math.min(100,Math.round(m.score*150))}%"></div>
+        </div>
+      </div>
+      <div class="match-body">
+        <div class="match-badge badge-post">◆ Bluesky Post
+          ${m.display ? `<span style="color:#444;font-weight:400;text-transform:none;letter-spacing:0">${esc(m.display)}</span>` : ''}
+        </div>
+        <div class="match-text">${esc(m.text)}</div>
+        <div class="match-meta">
+          ${m.handle ? `<span class="meta-item" style="color:#3a5a8a">@${esc(m.handle)}</span>` : ''}
+          ${m.is_news ? `<span class="meta-item" style="color:#3a6a3a">● news</span>` : ''}
+          ${m.url     ? `<span class="meta-item"><a href="${esc(m.url)}" target="_blank">↗ view post</a></span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return `
+    <div class="section">
+      <div class="section-hdr">
+        <div class="section-title">▲ Matched Events</div>
+        <div class="section-count">${eventMatches.length}</div>
+      </div>
+      <div class="match-list">
+        ${eventMatches.length ? eventMatches.map(renderEvent).join('') : '<div class="state-empty">No event matches</div>'}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-hdr">
+        <div class="section-title">◆ Matched Bluesky Posts</div>
+        <div class="section-count">${postMatches.length}</div>
+      </div>
+      <div class="match-list">
+        ${postMatches.length ? postMatches.map(renderPost).join('') : '<div class="state-empty">No post matches</div>'}
+      </div>
+    </div>
+  `;
+}
+
+
+// ── Polymarket comparison ─────────────────────────────────────────────────────
+
+function buildPolymarket(data) {
+  if (!data) {
+    return `<div class="pm-wrap"><div class="pm-empty">Polymarket comparison unavailable</div></div>`;
+  }
+
+  const matches = data.matches || [];
+  const query   = data.query   || '';
+
+  if (!matches.length) {
+    return `<div class="pm-wrap">
+      <div class="pm-hdr">
+        <div class="pm-title">Polymarket Comparison</div>
+        <span class="pm-logo">POLY</span>
+        <span class="pm-query">query: "${esc(query)}"</span>
+      </div>
+      <div class="pm-empty">No comparable Polymarket markets found for this query.</div>
+    </div>`;
+  }
+
+  function fmtVol(v) {
+    if (v == null) return '—';
+    if (v >= 1e6)  return '$' + (v/1e6).toFixed(1) + 'M';
+    if (v >= 1e3)  return '$' + (v/1e3).toFixed(1) + 'k';
+    return '$' + v.toFixed(0);
+  }
+
+  function fmtDate(s) {
+    if (!s) return '—';
+    try {
+      return new Date(s).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'2-digit'});
+    } catch { return s.slice(0,10); }
+  }
+
+  function scoreColor(s) {
+    if (s >= 0.35) return '#4a8fff';
+    if (s >= 0.18) return '#cc8800';
+    return '#444';
+  }
+
+  const rows = matches.map(m => {
+    const scorePct = Math.round(m.score * 100);
+    const bar      = `<span class="pm-score-bar-wrap"><span class="pm-score-bar" style="width:${Math.min(100,scorePct*2)}%"></span></span>`;
+    const closed   = m.closed ? `<span class="pm-closed-badge">closed</span>` : '';
+
+    // Price display — multi-outcome if more than 2 outcomes
+    let priceCell;
+    if (m.outcomes && m.outcomes.length > 2) {
+      const outcomeRows = m.outcomes.slice(0, 5).map((o, i) => {
+        const p    = m.prices[i] ?? 0;
+        const pct  = Math.round(p * 100);
+        return `<div class="pm-outcome-row">
+          <span class="pm-outcome-name" title="${esc(String(o))}">${esc(String(o))}</span>
+          <span class="pm-outcome-bar-wrap"><span class="pm-outcome-bar" style="width:${pct}%"></span></span>
+          <span class="pm-outcome-price">${pct}%</span>
+        </div>`;
+      }).join('');
+      priceCell = `<div class="pm-multi-outcomes">${outcomeRows}</div>`;
+    } else {
+      const yPct = m.yes_pct != null ? m.yes_pct : null;
+      const nPct = yPct != null ? 100 - yPct : null;
+      priceCell = yPct != null
+        ? `<div style="text-align:right">
+             <span class="pm-price yes">${yPct}%</span>
+             <span style="color:#2a2a2a;margin:0 3px">/</span>
+             <span class="pm-price no">${nPct}%</span>
+           </div>`
+        : `<span class="pm-price na">—</span>`;
+    }
+
+    return `<tr>
+      <td class="pm-question">
+        <a href="${esc(m.url)}" target="_blank">${esc(m.question)}</a>${closed}
+      </td>
+      <td class="pm-score" style="color:${scoreColor(m.score)}">
+        ${bar}${scorePct}%
+      </td>
+      <td>${priceCell}</td>
+      <td class="pm-vol">${fmtVol(m.volume)}</td>
+      <td class="pm-end">${fmtDate(m.end_date)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="pm-wrap">
+    <div class="pm-hdr">
+      <div class="pm-title">Polymarket Comparison</div>
+      <span class="pm-logo">POLY</span>
+      <span class="pm-query">query: "${esc(query)}"</span>
+      <span class="gloss-toggle" onclick="toggleGloss('gloss-pm')" style="margin-left:8px">ⓘ</span>
+    </div>
+    <div class="gloss-body" id="gloss-pm">
+      <p><strong>Similarity score</strong> — token-overlap between the Kalshi market title and
+      the Polymarket question. ≥35% (blue) is a strong match; 18–34% (amber) is plausible;
+      below 18% may be coincidental. Always read the question before trading on the comparison.</p>
+      <p><strong>YES % / NO %</strong> — Polymarket's current implied probability. Polymarket
+      prices are in dollars (0–1), displayed here as a percentage for direct comparison with
+      Kalshi's cent prices. A meaningful divergence between the two platforms is a potential
+      arbitrage signal — check resolution criteria carefully before acting on it.</p>
+    </div>
+    <table class="pm-table">
+      <thead>
+        <tr>
+          <th>Polymarket Question</th>
+          <th class="num">Similarity</th>
+          <th class="num">Odds</th>
+          <th class="num">Volume</th>
+          <th class="num">Ends</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+
+// ── Main loader ───────────────────────────────────────────────────────────────
+
+async function loadAll() {
+  if (!TICKER) {
+    document.getElementById('page-body').innerHTML =
+      `<div class="state-error">No ticker specified. Open this page from a market card.</div>`;
+    return;
+  }
+
+  document.getElementById('hdr-ticker').textContent = TICKER;
+  document.title = `${TICKER} — Market Detail`;
+
+  const btn = document.getElementById('hdr-refresh');
+  btn.classList.add('loading');
+  btn.textContent = '↻ Loading…';
+
+  document.getElementById('page-body').innerHTML =
+    `<div class="state-loading"><div class="spinner"></div>Fetching live data…</div>`;
+
+  // Parallel fetch: live market data + semantic matches + Polymarket comparison
+  const [liveRes, matchRes, pmRes] = await Promise.allSettled([
+    fetch(`/api/kalshi/market/${encodeURIComponent(TICKER)}`).then(r => r.json()),
+    fetch(`/api/kalshi/match_detail?ticker=${encodeURIComponent(TICKER)}&threshold=0.05`).then(r => r.json()),
+    fetch(`/api/polymarket/match?ticker=${encodeURIComponent(TICKER)}`).then(r => r.json()),
+  ]);
+
+  btn.classList.remove('loading');
+  btn.textContent = '↻ Refresh';
+
+  const live  = liveRes.status  === 'fulfilled' ? liveRes.value  : null;
+  const match = matchRes.status === 'fulfilled' ? matchRes.value : null;
+  const pm    = pmRes.status    === 'fulfilled' ? pmRes.value    : null;
+
+  if (live?.error) {
+    document.getElementById('page-body').innerHTML =
+      `<div class="state-error">Error loading market: ${esc(live.error)}</div>`;
+    return;
+  }
+
+  const mkt       = live?.market || {};
+  const orderbook = live?.orderbook || {};
+  const candles   = live?.candlesticks || [];
+  const siblings  = live?.siblings || [];
+  const matches   = match?.matches || [];
+
+  let heroHtml, contextHtml, sizerHtml, siblingsHtml, pmHtml, obHtml, chartHtml, matchesHtml;
+  try {
+    heroHtml     = buildHero(mkt);
+    contextHtml  = buildContext(mkt);
+    sizerHtml    = buildSizer(mkt, orderbook);
+    siblingsHtml = buildSiblings(siblings, mkt);
+    pmHtml       = buildPolymarket(pm);
+    obHtml       = buildOrderbook(orderbook);
+    chartHtml    = buildChart(candles);
+    matchesHtml  = buildMatches(matches);
+  } catch(err) {
+    document.getElementById('page-body').innerHTML =
+      `<div class="state-error">Render error: ${esc(err.message)}<br><small style="color:#442222">${esc(err.stack||'')}</small></div>`;
+    console.error('market_detail render error:', err);
+    return;
+  }
+
+  document.getElementById('page-body').innerHTML = `
+    ${heroHtml}
+    ${siblingsHtml}
+    ${pmHtml}
+    ${contextHtml}
+    ${sizerHtml}
+
+    <div class="two-col">
+      <div class="section">
+        ${obHtml}
+      </div>
+      ${chartHtml}
+    </div>
+
+    ${matchesHtml}
+  `;
+
+  // Init sizer at $100
+  sizerCalc(100);
+}
+
+loadAll();
+</script>
+</body>
+</html>

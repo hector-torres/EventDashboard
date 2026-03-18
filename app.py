@@ -495,10 +495,264 @@ def kalshi_match_detail():
         'threshold':     threshold,
     })
 
+
+@app.route('/api/kalshi/market/<ticker>')
+def kalshi_market_live(ticker):
+    """
+    Fetch live market data for a single ticker directly from Kalshi API.
+    Returns full market object + orderbook + candlesticks. Used by market_detail.html.
+    """
+    import urllib.request, urllib.error, ssl, json as _json
+    ticker = ticker.upper()
+
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode    = ssl.CERT_NONE
+
+    def _get(url):
+        req = urllib.request.Request(url, headers={'Accept': 'application/json'})
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=15) as resp:
+            return _json.loads(resp.read().decode())
+
+    base = 'https://api.elections.kalshi.com/trade-api/v2'
+    result = {}
+
+    # Fetch market
+    try:
+        data = _get(f'{base}/markets/{ticker}')
+        result['market'] = data.get('market', data)
+    except urllib.error.HTTPError as e:
+        return jsonify({'error': f'Market not found: {e.code}'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+    # Fetch orderbook
+    try:
+        ob = _get(f'{base}/markets/{ticker}/orderbook')
+        result['orderbook'] = ob.get('orderbook', ob.get('orderbook_fp', {}))
+    except Exception:
+        result['orderbook'] = {}
+
+    # Fetch candlesticks (1d interval, last 30 days)
+    try:
+        from datetime import datetime, timezone, timedelta
+        end_ts   = int(datetime.now(timezone.utc).timestamp())
+        start_ts = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
+        series_ticker = (result['market'].get('series_ticker') or ticker.rsplit('-', 1)[0])
+        candles = _get(
+            f'{base}/series/{series_ticker}/markets/{ticker}/candlesticks'
+            f'?start_ts={start_ts}&end_ts={end_ts}&period_interval=1440'
+        )
+        result['candlesticks'] = candles.get('candlesticks', [])
+    except Exception:
+        result['candlesticks'] = []
+
+    # Fetch sibling markets in the same event (multi-outcome markets like "who will be X?")
+    # These share an event_ticker; each sibling's subtitle is the candidate/option name.
+    try:
+        event_ticker = result['market'].get('event_ticker', '')
+        if event_ticker:
+            siblings_data = _get(f'{base}/markets?event_ticker={event_ticker}&limit=100&status=open')
+            siblings = siblings_data.get('markets', [])
+            # Sort by yes_ask ascending (most likely first) and exclude self
+            siblings = [m for m in siblings if m.get('ticker', '').upper() != ticker]
+            siblings.sort(key=lambda m: float(m.get('yes_ask_dollars') or m.get('yes_ask') or 0), reverse=True)
+            result['siblings'] = [
+                {
+                    'ticker':           m.get('ticker', ''),
+                    'subtitle':         m.get('subtitle') or m.get('yes_sub_title') or '',
+                    'yes_ask_dollars':  m.get('yes_ask_dollars'),
+                    'yes_ask':          m.get('yes_ask'),
+                    'no_ask_dollars':   m.get('no_ask_dollars'),
+                    'no_ask':           m.get('no_ask'),
+                    'volume':           m.get('volume') or m.get('volume_fp'),
+                    'last_price_dollars': m.get('last_price_dollars'),
+                    'last_price':       m.get('last_price'),
+                }
+                for m in siblings
+            ]
+        else:
+            result['siblings'] = []
+    except Exception:
+        result['siblings'] = []
+
+    return jsonify(result)
+
+
+@app.route('/market_detail')
+def market_detail_page():
+    """Full market detail page: live pricing, orderbook, price history, semantic matches."""
+    return send_from_directory('.', 'market_detail.html')
+
 @app.route('/match_detail')
 def match_detail_page():
     """Standalone page showing why a market matched semantically."""
     return send_from_directory('.', 'match_detail.html')
+
+
+@app.route('/api/polymarket/match')
+def polymarket_match():
+    """
+    Fuzzy-match the given Kalshi ticker against Polymarket markets.
+    Uses keyword extraction from the Kalshi market title + subtitle, fires
+    1-2 broad searches against the Polymarket Gamma API, scores all results
+    with the same token-overlap scorer used for Kalshi market matching, and
+    returns the top 5 by similarity score.
+    Query params: ticker (required)
+    """
+    import urllib.request, ssl, json as _json, re as _re
+    from kalshi_feed import _expand_tokens
+
+    ticker = (request.args.get('ticker') or '').upper()
+    if not ticker:
+        return jsonify({'error': 'ticker param required'}), 400
+
+    # ── Get Kalshi market from cache ──────────────────────────────────────────
+    with kalshi_manager._lock:
+        mkt = next(
+            (m for m in kalshi_manager._markets if m.get('ticker', '').upper() == ticker),
+            None
+        )
+
+    if not mkt:
+        return jsonify({'error': f'Market {ticker} not found in cache'}), 404
+
+    title    = (mkt.get('title') or '').strip()
+    subtitle = (mkt.get('subtitle') or '').strip()
+    combined = f'{title} {subtitle}'.strip()
+
+    # ── Build search keywords: extract meaningful 1-2 word phrases ────────────
+    _STOP = {
+        'a','an','the','is','are','was','were','will','would','could','should',
+        'may','might','do','does','did','have','has','had','be','been','being',
+        'and','but','or','nor','for','yet','so','in','on','at','to','of','by',
+        'as','if','it','its','this','that','with','from','into','about','over',
+        'who','what','which','when','where','how','not','no','than','then',
+        'there','their','they','he','she','we','you','i','my','your','our',
+        'up','all','any','some','next','new','first','last','more','most',
+    }
+    words = [w for w in _re.findall(r'[a-zA-Z]{3,}', combined.lower()) if w not in _STOP]
+    # Use first 4 meaningful words as the search query — broad enough to get results
+    keywords = ' '.join(words[:4]) if words else title[:40]
+
+    # ── Fetch from Polymarket Gamma API ───────────────────────────────────────
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode    = ssl.CERT_NONE
+
+    def _get(url):
+        req = urllib.request.Request(
+            url,
+            headers={'Accept': 'application/json', 'User-Agent': 'EventDashboard/1.3'}
+        )
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=15) as resp:
+            return _json.loads(resp.read().decode())
+
+    base = 'https://gamma-api.polymarket.com'
+    raw_markets = []
+
+    # Fire two queries: keyword search + a broader fallback using just first 2 words
+    queries = [keywords]
+    if len(words) > 2:
+        queries.append(' '.join(words[:2]))
+
+    seen_ids = set()
+    for q in queries:
+        try:
+            encoded = urllib.request.quote(q)
+            results = _get(f'{base}/markets?q={encoded}&limit=30&active=true')
+            if isinstance(results, list):
+                for m in results:
+                    mid = m.get('id') or m.get('conditionId') or m.get('slug')
+                    if mid and mid not in seen_ids:
+                        seen_ids.add(mid)
+                        raw_markets.append(m)
+        except Exception:
+            pass
+
+    if not raw_markets:
+        return jsonify({'matches': [], 'query': keywords, 'note': 'No Polymarket results returned'})
+
+    # ── Score each Polymarket market against the Kalshi title ─────────────────
+    kalshi_tok = _expand_tokens(combined)
+    scored = []
+
+    for m in raw_markets:
+        question = (m.get('question') or '').strip()
+        description = (m.get('description') or '')[:200]
+        pm_text = f'{question} {description}'.strip()
+        pm_tok  = _expand_tokens(pm_text)
+
+        if not pm_tok or not kalshi_tok:
+            continue
+
+        # Bidirectional coverage: average of (kalshi tokens in pm) and (pm tokens in kalshi)
+        # This handles both short and long market titles fairly
+        fwd = len(kalshi_tok & pm_tok) / len(kalshi_tok)
+        rev = len(kalshi_tok & pm_tok) / len(pm_tok)
+        score = round((fwd + rev) / 2, 4)
+
+        if score < 0.05:
+            continue
+
+        # Parse outcomePrices (returned as JSON string by Polymarket)
+        outcome_prices_raw = m.get('outcomePrices') or '[]'
+        try:
+            prices = _json.loads(outcome_prices_raw) if isinstance(outcome_prices_raw, str) else outcome_prices_raw
+            prices = [float(p) for p in prices]
+        except Exception:
+            prices = []
+
+        outcomes_raw = m.get('outcomes') or '[]'
+        try:
+            outcomes = _json.loads(outcomes_raw) if isinstance(outcomes_raw, str) else outcomes_raw
+        except Exception:
+            outcomes = []
+
+        yes_price = None
+        if prices:
+            # For binary markets outcomes[0] is typically Yes
+            if outcomes and str(outcomes[0]).lower() in ('yes', 'true', '1'):
+                yes_price = prices[0]
+            else:
+                yes_price = prices[0]   # fallback: first price
+
+        slug       = m.get('slug') or ''
+        # events field may contain the event slug for URL building
+        event_slug = ''
+        events_list = m.get('events') or []
+        if isinstance(events_list, list) and events_list:
+            event_slug = (events_list[0].get('slug') or '')
+
+        url = f'https://polymarket.com/event/{event_slug}/{slug}' if event_slug else f'https://polymarket.com/market/{slug}'
+
+        vol = m.get('volume')
+        liq = m.get('liquidity')
+
+        scored.append({
+            'score':       score,
+            'question':    question,
+            'slug':        slug,
+            'url':         url,
+            'yes_price':   round(yes_price, 4) if yes_price is not None else None,
+            'yes_pct':     round(yes_price * 100) if yes_price is not None else None,
+            'outcomes':    outcomes[:6] if outcomes else [],
+            'prices':      [round(float(p), 4) for p in prices[:6]],
+            'volume':      round(float(vol), 2) if vol else None,
+            'liquidity':   round(float(liq), 2) if liq else None,
+            'end_date':    m.get('endDate') or m.get('end_date') or '',
+            'active':      m.get('active', True),
+            'closed':      m.get('closed', False),
+        })
+
+    scored.sort(key=lambda x: x['score'], reverse=True)
+
+    return jsonify({
+        'matches': scored[:5],
+        'query':   keywords,
+        'kalshi_title': title,
+    })
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 

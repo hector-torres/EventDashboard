@@ -1056,6 +1056,16 @@
       flex: 1; font-size: 13px; font-weight: 600; color: #bbb;
       line-height: 1.4; min-width: 0;
     }
+    .k-title-link {
+      color: inherit; text-decoration: none;
+      display: block;
+    }
+    .k-title-link:hover {
+      color: #7aaaff;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
     .k-market-prices { display: flex; gap: 4px; flex-shrink: 0; }
     .k-price-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .k-price-col-label {
@@ -1641,11 +1651,11 @@
 
       <!-- Strategy sub-tabs -->
       <div class="strat-tabs">
-        <div class="strat-tab active" id="strat-tab-expiry" onclick="stratSwitchTab('expiry')">
+        <div class="strat-tab" id="strat-tab-expiry" onclick="stratSwitchTab('expiry')">
           Near Expiry
           <div class="strat-tab-tooltip">Markets closing within a few days with price between 25–75¢ — genuinely undecided outcomes with time pressure.</div>
         </div>
-        <div class="strat-tab" id="strat-tab-extreme" onclick="stratSwitchTab('extreme')">
+        <div class="strat-tab active" id="strat-tab-extreme" onclick="stratSwitchTab('extreme')">
           Extreme
           <div class="strat-tab-tooltip">Markets closing very soon priced near 0¢ or 100¢ — near-certainty outcomes. Useful for asymmetric bets if a contradicting event fires.</div>
         </div>
@@ -1858,7 +1868,7 @@ function kRenderMarket(m, showScore) {
   return `<div class="k-market" data-event="${m.event_ticker || ''}">
     <div class="k-market-top">
       ${showScore ? `<div class="k-market-prob k-match-conf"><span class="k-conf-num">${score.toFixed(2)}</span><span class="k-conf-label">match</span></div>` : `<div class="k-market-prob">${yesCents}%</div>`}
-      <div class="k-market-title">${m.title || m.ticker}</div>
+      <div class="k-market-title"><a class="k-title-link" href="/market_detail?ticker=${encodeURIComponent(m.ticker)}" target="_blank">${m.title || m.ticker}</a></div>
       <div class="k-market-prices">
         <div class="k-price-col">
           <div class="k-price-col-label">Yes</div>
@@ -2692,7 +2702,7 @@ function stratRenderCard(m) {
                : 'days'
              }</div>`}
       </div>
-      <div class="strat-card-title">${m.title || m.ticker}</div>
+      <div class="strat-card-title"><a class="k-title-link" href="/market_detail?ticker=${encodeURIComponent(m.ticker)}" target="_blank">${m.title || m.ticker}</a></div>
       <div class="strat-prices">
         <div class="strat-price-col">
           <div class="strat-price-label">Yes</div>

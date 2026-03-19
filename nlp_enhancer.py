@@ -452,6 +452,67 @@ class NLPEnhancer:
             return 'MEDIUM', f'ent:{best}+{next(iter(mm))}'
         return base_severity, base_keyword
 
+
+    # ── Phase 1: Historical reference detection (#3) ──────────────────────────
+
+    # Past years that clearly mark a reference as historical rather than breaking
+    _HISTORICAL_YEAR_RE = re.compile(
+        r'\b(19\d{2}|200\d|201[0-9]|202[0-3])\b'
+    )
+    # Phrases that frame an event as past/retrospective
+    _HISTORICAL_PHRASES = frozenset([
+        'after the ', 'since the ', 'following the ', 'in the wake of the ',
+        'anniversary of', 'years since', 'years after', 'months after',
+        'remembering the', 'memorial for', 'marks the', 'marked the',
+        'commemorat', 'look back at', 'looking back', 'flashback',
+        'happened in', 'occurred in', 'took place in', 'was in ',
+        'as it happened', 'on this day', 'this day in',
+    ])
+
+    def is_historical_reference(self, text: str, keyword: str) -> bool:
+        """
+        Return True if the post appears to be referencing a past event rather
+        than reporting a breaking one.
+
+        Two checks:
+        1. The text contains an explicit year in the range 2000-2023 (i.e. not
+           the current year) — e.g. "the October 2023 Hamas attack on Israel"
+        2. The keyword appears in a retrospective framing phrase — e.g.
+           "after the attack", "since the shooting", "anniversary of the crash"
+
+        Both checks are deliberately conservative: we only suppress when the
+        signal is clear, so we don't accidentally drop legitimate breaking news
+        that happens to mention a past comparison event.
+        """
+        import datetime as _dt
+        current_year = str(_dt.datetime.now().year)
+        text_lower   = text.lower()
+
+        # Check 1: contains an explicit past year near the keyword
+        for m in self._HISTORICAL_YEAR_RE.finditer(text):
+            year = m.group(1)
+            if year == current_year:
+                continue   # current year is fine
+            # Only flag if the year appears within 80 chars of the keyword
+            kw_pos = text_lower.find(keyword.lower())
+            if kw_pos == -1:
+                continue
+            if abs(m.start() - kw_pos) <= 80:
+                return True
+
+        # Check 2: keyword appears in a retrospective phrase
+        kw_lower = keyword.lower()
+        for phrase in self._HISTORICAL_PHRASES:
+            # Look for the phrase immediately before or containing the keyword
+            idx = text_lower.find(phrase)
+            if idx == -1:
+                continue
+            surrounding = text_lower[idx: idx + len(phrase) + len(kw_lower) + 10]
+            if kw_lower in surrounding:
+                return True
+
+        return False
+
     # ── Phase 3: Semantic deduplication ───────────────────────────────────────
 
     def is_duplicate_event(self, title: str, topic_key: str) -> Tuple[bool, float]:

@@ -3332,76 +3332,198 @@ document.addEventListener('keydown', e => {
 
   <!-- ── Loading overlay (shown while Kalshi markets are still fetching) ── -->
   <div id="loading-overlay" style="display:none;position:fixed;inset:0;z-index:9999;
-       background:rgba(8,8,8,0.94);backdrop-filter:blur(4px);
-       flex-direction:column;align-items:center;justify-content:center;gap:18px;">
-    <div style="width:48px;height:48px;border:2px solid #1a1a1a;border-top-color:#4477dd;
-                border-radius:50%;animation:spin 1s linear infinite;"></div>
-    <div style="text-align:center;">
-      <div style="font-size:13px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;
-                  color:#4477dd;margin-bottom:8px;">Loading Market Dashboard</div>
-      <div id="overlay-status" style="font-size:11px;color:#444;letter-spacing:0.06em;">
-        Fetching market data…
+       background:rgba(8,8,8,0.96);backdrop-filter:blur(4px);
+       flex-direction:column;align-items:center;justify-content:center;gap:20px;">
+
+    <!-- Spinner -->
+    <div style="width:44px;height:44px;border:2px solid #1a1a1a;border-top-color:#4477dd;
+                border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0;"></div>
+
+    <!-- Main text block -->
+    <div style="text-align:center;max-width:340px;">
+      <div style="font-size:12px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;
+                  color:#4477dd;margin-bottom:10px;">Loading Event Dashboard</div>
+
+      <div id="overlay-phase" style="font-size:11px;font-weight:700;letter-spacing:0.1em;
+           text-transform:uppercase;color:#666;margin-bottom:6px;">
+        Initializing…
       </div>
-      <div style="font-size:10px;color:#2a2a2a;margin-top:6px;">
-        Page will refresh automatically when ready
+
+      <div id="overlay-status" style="font-size:11px;color:#444;letter-spacing:0.04em;
+           margin-bottom:10px;">
+        Starting up…
+      </div>
+
+      <!-- Progress bar -->
+      <div style="width:240px;height:2px;background:#1a1a1a;border-radius:2px;
+                  overflow:hidden;margin:0 auto 12px;">
+        <div id="overlay-bar" style="height:100%;background:#4477dd;border-radius:2px;
+             width:0%;transition:width 0.6s ease;"></div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:center;gap:16px;">
+        <div id="overlay-elapsed" style="font-size:10px;color:#2a2a2a;
+             font-variant-numeric:tabular-nums;letter-spacing:0.06em;">
+          0s elapsed
+        </div>
+        <div style="width:1px;height:10px;background:#1a1a1a;"></div>
+        <div id="overlay-hint" style="font-size:10px;color:#2a2a2a;letter-spacing:0.04em;">
+          Cold start takes 30–60s
+        </div>
+      </div>
+    </div>
+
+    <!-- Step list -->
+    <div id="overlay-steps" style="display:flex;flex-direction:column;gap:5px;
+         min-width:220px;margin-top:4px;">
+      <div class="ov-step" id="step-server">
+        <span class="ov-dot" id="dot-server">○</span>
+        <span class="ov-label">Flask server</span>
+      </div>
+      <div class="ov-step" id="step-bluesky">
+        <span class="ov-dot" id="dot-bluesky">○</span>
+        <span class="ov-label">Bluesky feed</span>
+      </div>
+      <div class="ov-step" id="step-kalshi">
+        <span class="ov-dot" id="dot-kalshi">○</span>
+        <span class="ov-label">Kalshi API fetch</span>
+      </div>
+      <div class="ov-step" id="step-index">
+        <span class="ov-dot" id="dot-index">○</span>
+        <span class="ov-label">Market indexing &amp; scoring</span>
+      </div>
+      <div class="ov-step" id="step-ready">
+        <span class="ov-dot" id="dot-ready">○</span>
+        <span class="ov-label">Dashboard ready</span>
       </div>
     </div>
   </div>
+
   <style>
-    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes spin    { to { transform: rotate(360deg); } }
+    @keyframes ov-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    .ov-step {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 10px; letter-spacing: 0.08em; color: #2a2a2a;
+    }
+    .ov-dot  { font-size: 10px; width: 12px; text-align: center; }
+    .ov-label { color: #2a2a2a; }
+    .ov-step.done .ov-dot   { color: #4a9a4a; }
+    .ov-step.done .ov-label { color: #3a5a3a; }
+    .ov-step.active .ov-dot {
+      color: #4477dd;
+      animation: ov-pulse 1.2s infinite;
+    }
+    .ov-step.active .ov-label { color: #4477dd; }
   </style>
+
   <script>
   (function() {
-    var THRESHOLD  = 1000;  // min markets before we consider data loaded
-    var POLL_MS    = 3000;  // check every 3s
-    var overlay    = document.getElementById('loading-overlay');
-    var statusEl   = document.getElementById('overlay-status');
-    var pollTimer  = null;
-    var shown      = false;
+    var THRESHOLD = 1000;
+    var POLL_MS   = 2000;
+    var startTime = Date.now();
+    var overlay   = document.getElementById('loading-overlay');
+    var pollTimer = null;
+    var shown     = false;
+
+    function el(id) { return document.getElementById(id); }
+
+    function setStep(stepId, state) {
+      var step = el('step-' + stepId);
+      var dot  = el('dot-'  + stepId);
+      if (!step || !dot) return;
+      step.className = 'ov-step' + (state === 'done' ? ' done' : state === 'active' ? ' active' : '');
+      dot.textContent = state === 'done' ? '✓' : state === 'active' ? '●' : '○';
+    }
+
+    function fmtElapsed(ms) {
+      var s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's elapsed';
+      return Math.floor(s / 60) + 'm ' + (s % 60) + 's elapsed';
+    }
+
+    function updateBar(pct) {
+      var bar = el('overlay-bar');
+      if (bar) bar.style.width = Math.min(100, pct) + '%';
+    }
 
     function checkLoaded() {
+      var elapsed = Date.now() - startTime;
+      if (el('overlay-elapsed')) el('overlay-elapsed').textContent = fmtElapsed(elapsed);
+
       fetch('/api/kalshi/status')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-          var count = d.count || 0;
-          if (statusEl) {
-            statusEl.textContent = count > 0
-              ? count.toLocaleString() + ' markets loaded…'
-              : 'Connecting to Kalshi API…';
+          var count  = d.count  || 0;
+          var status = d.status || '';
+
+          if (!shown && count < THRESHOLD) {
+            overlay.style.display = 'flex';
+            shown = true;
           }
+
+          setStep('server',  'done');
+          setStep('bluesky', 'done');   // if server is up, Bluesky polling has started
+
+          if (status === 'fetching') {
+            setStep('kalshi', 'active');
+            setStep('index',  'pending');
+            if (el('overlay-phase'))  el('overlay-phase').textContent  = 'Fetching from Kalshi API';
+            var pages   = d.fetch_pages   || 0;
+            var running = d.fetch_running || 0;
+            var pageStr = pages > 0
+              ? 'Page ' + pages + ' of ~35 fetched'
+              : 'Connecting to Kalshi API…';
+            var mktStr  = running > 0
+              ? ' · ' + running.toLocaleString() + ' markets so far'
+              : '';
+            if (el('overlay-status')) el('overlay-status').textContent = pageStr + mktStr;
+            if (el('overlay-hint'))   el('overlay-hint').textContent   = '~35 pages · ~35k markets total · usually 30–60s';
+            var fetchPct = pages > 0 ? Math.min(58, 10 + (pages / 35) * 48) : Math.min(12, 8 + elapsed / 1000);
+            updateBar(fetchPct);
+
+          } else if (count > 0 && count < THRESHOLD) {
+            setStep('kalshi', 'done');
+            setStep('index',  'active');
+            if (el('overlay-phase'))  el('overlay-phase').textContent  = 'Indexing markets';
+            if (el('overlay-status')) el('overlay-status').textContent = count.toLocaleString() + ' markets loaded — indexing tokens…';
+            updateBar(70 + (count / THRESHOLD) * 25);
+
+          } else if (count === 0) {
+            setStep('kalshi', 'active');
+            if (el('overlay-phase'))  el('overlay-phase').textContent  = count === 0 && status !== 'fetching' ? 'Server starting up' : 'Fetching from Kalshi API';
+            if (el('overlay-status')) el('overlay-status').textContent = 'Connecting to Kalshi API…';
+            updateBar(Math.min(55, 8 + elapsed / 800));
+          }
+
           if (count >= THRESHOLD) {
-            // Data is ready
             clearInterval(pollTimer);
-            if (shown) {
-              // We showed the overlay — data just finished loading.
-              // Dismiss and trigger a fresh series/match load without a full page reload.
+            setStep('kalshi', 'done');
+            setStep('index',  'done');
+            setStep('ready',  'done');
+            if (el('overlay-phase'))  el('overlay-phase').textContent  = 'Ready';
+            if (el('overlay-status')) el('overlay-status').textContent = count.toLocaleString() + ' markets loaded';
+            if (el('overlay-hint'))   el('overlay-hint').textContent   = '';
+            updateBar(100);
+
+            setTimeout(function() {
               if (overlay) overlay.style.display = 'none';
-              // Reset retry counters so load functions run fresh
-              if (typeof _mpRetry !== 'undefined') _mpRetry = 0;
-              // Call the page's own load functions
-              if (typeof mpLoadSeries  === 'function') mpLoadSeries();
-              if (typeof kLoadSeries   === 'function') kLoadSeries(1);
-              if (typeof mpFetchMatch  === 'function') mpFetchMatch();
-              if (typeof mpUpdateStatus=== 'function') mpUpdateStatus();
-            } else {
-              // Data was already loaded when page opened — just hide overlay (already hidden)
-              if (overlay) overlay.style.display = 'none';
-            }
-          } else {
-            // Not ready — show overlay
-            if (overlay && !shown) {
-              overlay.style.display = 'flex';
-              shown = true;
-            }
+              // Dashboard-specific dismiss: refresh feeds + Kalshi series
+              if (typeof fetchAll     === 'function') fetchAll();
+              if (typeof kLoadSeries  === 'function') kLoadSeries(1);
+            }, 600);
           }
         })
         .catch(function() {
-          if (statusEl) statusEl.textContent = 'Waiting for server…';
-          if (overlay && !shown) { overlay.style.display = 'flex'; shown = true; }
+          if (!shown) { overlay.style.display = 'flex'; shown = true; }
+          setStep('server', 'active');
+          if (el('overlay-phase'))  el('overlay-phase').textContent  = 'Waiting for server';
+          if (el('overlay-status')) el('overlay-status').textContent = 'Flask server not responding yet…';
+          if (el('overlay-hint'))   el('overlay-hint').textContent   = 'Run: python app.py';
+          updateBar(Math.min(8, elapsed / 1000));
         });
     }
 
-    // Check immediately, then poll
     checkLoaded();
     pollTimer = setInterval(checkLoaded, POLL_MS);
   })();

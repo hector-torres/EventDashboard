@@ -147,10 +147,11 @@ def _is_open_for_trading(market: Dict, now_utc: datetime) -> bool:
         return True
 
 
-def _fetch_all_open_markets() -> Tuple[List[Dict], Optional[str]]:
+def _fetch_all_open_markets(progress_cb=None) -> Tuple[List[Dict], Optional[str]]:
     """
     Pull all open markets from Kalshi using cursor pagination.
     Returns (markets_list, error_string_or_None).
+    Optional progress_cb(pages, running_count) called after each page lands.
     """
     import urllib.request
     import urllib.error
@@ -212,6 +213,13 @@ def _fetch_all_open_markets() -> Tuple[List[Dict], Optional[str]]:
             filtered_batch.append(m)
         markets.extend(filtered_batch)
         page += 1
+
+        # Update live progress for the loading overlay
+        if progress_cb is not None:
+            try:
+                progress_cb(page, len(markets))
+            except Exception:
+                pass
 
         # Log one full market object on first page for inspection
         if not sample_logged and filtered_batch:
@@ -456,6 +464,10 @@ class KalshiFeedManager:
         self._match_cache:  Dict      = {}   # {markets, texts_len, scored_at}
         self._last_corpus_hash: int   = 0    # hash of last scored texts
 
+        # Live fetch progress — updated during _pull() for the loading overlay
+        self._fetch_pages   = 0   # pages fetched so far this pull
+        self._fetch_running = 0   # markets accumulated so far this pull
+
         # Bootstrap: try cache first, pull immediately if stale
         if _cache_is_fresh(CACHE_FILE):
             cached = _load_cache(CACHE_FILE)
@@ -558,10 +570,12 @@ class KalshiFeedManager:
     def get_status(self) -> Dict:
         with self._lock:
             return {
-                'status':       self.status,
-                'count':        len(self._markets),
-                'last_updated': self.last_updated,
-                'error':        self._error,
+                'status':        self.status,
+                'count':         len(self._markets),
+                'last_updated':  self.last_updated,
+                'error':         self._error,
+                'fetch_pages':   self._fetch_pages,
+                'fetch_running': self._fetch_running,
             }
 
     def get_series(self) -> List[Dict]:
@@ -768,8 +782,16 @@ class KalshiFeedManager:
 
     def _pull(self) -> None:
         self.status = 'fetching'
+        # Reset live progress counters for the loading overlay
+        self._fetch_pages   = 0
+        self._fetch_running = 0
         logger.info('[Kalshi] Pulling open markets…')
-        markets, err = _fetch_all_open_markets()
+
+        def _progress(pages: int, running: int) -> None:
+            self._fetch_pages   = pages
+            self._fetch_running = running
+
+        markets, err = _fetch_all_open_markets(progress_cb=_progress)
         with self._lock:
             if err and not markets:
                 self._error  = err

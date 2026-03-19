@@ -1,4 +1,4 @@
-# Event Trading Terminal — v1.4
+# Event Trading Terminal — v1.5
 **KLTT Holdings** | Internal research tool
 
 Real-time event detection and market intelligence terminal. Monitors Bluesky for breaking news, detects developing events through NLP and velocity analysis, surfaces relevant Kalshi prediction markets, and provides a live market detail view with Polymarket comparison.
@@ -24,7 +24,8 @@ Real-time event detection and market intelligence terminal. Monitors Bluesky for
 15. [API Reference](#api-reference)
 16. [Setup & Running](#setup--running)
 17. [Configuration & Tuning](#configuration--tuning)
-18. [Version History](#version-history)
+18. [Known Limitations / Future Work](#known-limitations--future-work)
+19. [Version History](#version-history)
 
 ---
 
@@ -45,10 +46,12 @@ Title bar on all pages: **Event Trading Terminal** brand (16px bold) → nav lin
 | Panel | Contents |
 |-------|---------|
 | **News Accounts** | Live feed from tracked priority accounts. Collapsible **Tracked Accounts** bar (add/remove, persists to `accounts.txt`). |
-| **Detected Events** | Events CRITICAL→HIGH→MEDIUM with lifecycle badges. Collapsible **Spikes** bar. |
+| **Detected Events** | Events CRITICAL→HIGH→MEDIUM with lifecycle badges and semantic WHO — WHAT — WHERE titles. Collapsible **Spikes** bar. |
 | **Keyword Sweep** | Broad keyword search feed. Collapsible **Keywords** bar (add/pause/remove, persists to `custom_feeds.json`). Noise Filter slider. |
 
 All collapsible bars use the shared `.cbar` CSS system: `.cbar` → `.cbar-header` → `.cbar-arrow` + `.cbar-label` + `.cbar-count`, and `.cbar-body`. Collapse rotates arrow; count always visible.
+
+The loading overlay on both Event Dashboard and Market Dashboard shows live Kalshi fetch progress: page count, running market count, elapsed time, and a step-by-step status indicator (Flask server → Bluesky feed → Kalshi API fetch → Market indexing → Ready).
 
 ### Market Dashboard (`/markets`)
 
@@ -115,14 +118,14 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 | `app.py` | Flask routes, poll thread, corpus builder, live market + Polymarket routes |
 | `bluesky_feed.py` | AT Protocol client, feed management, persistence |
 | `post_scorer.py` | Modular noise scoring (10 active filters) |
-| `event_detector.py` | Event detection strategies |
-| `nlp_enhancer.py` | NER, negation, semantic dedup, zero-shot |
-| `kalshi_feed.py` | Kalshi API, market cache, semantic scoring, hourly refresh |
+| `event_detector.py` | Event detection strategies, quality gates v2.1, semantic title generation |
+| `nlp_enhancer.py` | NER, negation, semantic dedup, zero-shot, historical reference detection |
+| `kalshi_feed.py` | Kalshi API, market cache, semantic scoring, hourly refresh, fetch progress |
 | `market_indices.py` | Yahoo Finance + AAA index polling |
 | `gas_prices.py` | AAA gas price scraper |
 | `dashboard.html` | Event Dashboard UI |
 | `markets.html` | Market Dashboard UI |
-| `market_detail.html` | Live market detail page (new in v1.4) |
+| `market_detail.html` | Live market detail page |
 | `index.html` | Landing page |
 
 **Persistence files:**
@@ -161,13 +164,42 @@ Pending (disabled): F8 follower count, F9 post count, F10 bio — require `getPr
 
 **File:** `event_detector.py` | Pluggable strategy pattern.
 
-**KeywordClusterStrategy** — Groups posts by keywords in a 10-minute window. Source tier weights (Reuters/AP=5 … generic=1). Fires at CLUSTER_THRESHOLD=3. Includes negation check and semantic dedup.
+**KeywordClusterStrategy** — Groups posts by keywords in a 10-minute window. Source tier weights (Reuters/AP=5 … generic=1). Fires at CLUSTER_THRESHOLD=3 (higher for ambiguous words — see quality gates below). Includes negation check, historical reference filter, entity requirement, coherence check, and semantic dedup.
 
 **VelocitySpikeStrategy** — Detects volume surges. Drives the Spikes bar.
 
 **ZeroShotStrategy** — Cosine similarity against 7 category descriptions. Fires MEDIUM events at confidence ≥0.32 (requires sentence-transformers).
 
 **Lifecycle:** breaking (<30min), developing (30min–4h), stale (>4h, dropped). Max 50 events.
+
+### Event Quality Gates (v2.1)
+
+Four filters applied before a cluster fires as an event, all fail-open (never suppress when evidence is absent):
+
+**#1 — Cluster coherence** (`_check_cluster_coherence`): For clusters of 3+ posts, at least 50% of posts must share at least one named entity with another post in the cluster. Prevents unrelated posts that happen to share a trigger word (e.g. "attack" in a Tehran news story + "attack" in a 2023 street art post) from forming a false event. Wire alerts and geo/entity-keyed clusters are exempt.
+
+**#2 — Entity requirement for ambiguous words** (`ENTITY_REQUIRED_WORDS`): 20 high-ambiguity single-word triggers require at least one named entity in each post before that post is counted toward a cluster. Words include: `attack`, `crisis`, `shooting`, `crash`, `explosion`, `protest`, `arrested`, `invasion`, `sanctions`, `collision`, `outbreak`, `wildfire`, `floods`, `missing`, `election`, `coup`. Falls back to capitalised proper noun regex when spaCy is unavailable.
+
+**#3 — Historical reference filter** (`is_historical_reference` in `nlp_enhancer.py`): Posts referencing a past year (2000–2023) within 80 characters of the trigger keyword, or using retrospective framing phrases ("after the attack", "since the shooting", "anniversary of", "looking back"), are excluded from clusters. Priority accounts and news accounts are exempt.
+
+**#4 — Per-word threshold overrides** (`CLUSTER_THRESHOLD_OVERRIDES`): Ambiguous single-word triggers require higher cluster weight before firing. `attack`, `crisis`, `shooting`, `crash`, `explosion`, `protest`, `arrested`, `missing`, `election` → weight 5 (vs. global default of 3). `sanctions`, `collision`, `outbreak`, `wildfire`, `floods`, `coup` → weight 4.
+
+### Semantic Event Titles
+
+`_generate_title` now calls `_extract_semantic_title` for standard keyword matches, building a descriptive **WHO — WHAT [— WHERE]** title from the highest-weight post's content.
+
+Logic (in priority order):
+1. **geo:/person:/ent: prefixed keywords** — structured key used directly
+2. **wire_alert** — wire header parsed and truncated at colon/em-dash
+3. **All other keywords** — entities extracted, demonyms normalised, action modifiers detected, object prepositional phrases extracted, WHO/WHERE deduplicated by root
+
+**`_NORP_TO_COUNTRY`** (module-level dict, 30 entries) — maps demonym/nationality forms to canonical country names: "Iranian" → "Iran", "Qatari" → "Qatar", "Ukrainian" → "Ukraine", etc.
+
+**`COUNTRY_NAMES`** expanded with 30+ key cities, territories, and regions: Gaza, Kyiv, Tehran, Baghdad, Red Sea, Taiwan Strait, Donbas, Strait of Hormuz, etc.
+
+Example: `"BREAKING An Iranian missile attack has damaged Qatar's main gas facility"` → **"Iran — Missile Attack — Qatar"**
+
+**Impact on Event Matches column:** Richer event titles feed better tokens into the Kalshi semantic match corpus. Markets about "Iran", "missile", "Qatar", and "gas facility" score higher than they would against the bare token "attack". The quality gates also reduce false-positive events, cleaning up the corpus overall.
 
 ---
 
@@ -176,6 +208,7 @@ Pending (disabled): F8 follower count, F9 post count, F10 bio — require `getPr
 **File:** `nlp_enhancer.py` | All features degrade gracefully.
 
 - **Phase 1** — NER (spaCy or 5-pass regex) + negation detection
+- **Phase 1 (v1.5)** — `is_historical_reference(text, keyword)`: detects past-year proximity and retrospective framing phrases to filter historical references from event clusters
 - **Phase 3** — Semantic dedup (cosine ≥0.75, or TF-IDF ≥0.40 fallback)
 - **Phase 4** — Zero-shot classification (7 categories)
 
@@ -183,6 +216,15 @@ Pending (disabled): F8 follower count, F9 post count, F10 bio — require `getPr
 pip install spacy && python -m spacy download en_core_web_sm  # Phase 1
 pip install sentence-transformers                              # Phase 3+4
 ```
+
+### `is_historical_reference(text, keyword)`
+
+Two conservative checks (fail-open):
+
+1. **Past year proximity** — text contains a year in 2000–2023 within 80 chars of the keyword. Catches "the October **2023** Hamas **attack** on Israel".
+2. **Retrospective framing** — keyword appears inside/after phrases like "after the", "since the", "anniversary of", "looking back", "on this day". Catches "street art painted **after the attack**".
+
+Priority/news account posts are exempt.
 
 ---
 
@@ -196,7 +238,9 @@ Sort modes: **Confidence** (score desc), **Prob ↑↓** (yes_ask), **Value** (s
 
 Event dedup: same `event_ticker` grouped under one card with expandable siblings.
 
-**Pre-open market filter:** Markets with `open_time` in the future are excluded at ingest time — these are markets Kalshi creates in advance that show "Begins in N days" and cannot yet be traded. The number of dropped markets is logged per pull.
+**Pre-open market filter:** Markets with `open_time` in the future are excluded at ingest time. The number of dropped markets is logged per pull.
+
+**Fetch progress:** `_fetch_pages` and `_fetch_running` updated after each API page via a progress callback. Both exposed on `/api/kalshi/status` and displayed in the loading overlay.
 
 ---
 
@@ -220,6 +264,7 @@ Event dedup: same `event_ticker` grouped under one card with expandable siblings
 - `mpFetchMatch(resetPage=false)` called by interval (preserves page); `resetPage=true` on confidence change or init
 - `MP_PER_PAGE` calibrated dynamically
 - **Market titles are hyperlinks** opening `/market_detail?ticker=TICKER` in a new tab
+- Match quality benefits indirectly from v2.1 event quality improvements: fewer false-positive events and richer semantic titles ("Iran — Missile Attack — Qatar" vs "Attack") produce better token overlap with relevant Kalshi markets
 
 ---
 
@@ -301,7 +346,7 @@ returnPct      = netProfit / totalCost × 100
 
 1. Extracts meaningful keywords from Kalshi market title + subtitle (stops removed)
 2. Fires up to 2 searches against `gamma-api.polymarket.com/markets?q=...&active=true`
-3. Scores each result with bidirectional token-overlap: `(forward + reverse) / 2` where forward = Kalshi tokens in PM question, reverse = PM tokens in Kalshi title
+3. Scores each result with bidirectional token-overlap: `(forward + reverse) / 2`
 4. Returns top 5 above 5% similarity threshold with: score, question, YES%, NO%, volume, end date, direct URL
 
 `outcomePrices` from Polymarket is a JSON-encoded string — parsed before scoring. Multi-outcome markets (>2 outcomes) display all outcomes with individual probability bars.
@@ -350,7 +395,8 @@ POST /api/accounts/reload               Reload from accounts.txt
 # Market Data
 GET  /api/markets            Yahoo Finance + AAA indices
 GET  /api/gas                AAA gas prices (all grades + direction)
-GET  /api/kalshi/status      Cache status, market count, last updated, refresh state
+GET  /api/kalshi/status      Cache status, market count, last updated, refresh state,
+                               fetch_pages + fetch_running (live during pull)
 GET  /api/kalshi/series      Series list (params: category, q)
 GET  /api/kalshi/markets     Markets (params: category, series_ticker, q,
                                min/max_price, min/max_days, sort, page, per_page)
@@ -358,19 +404,19 @@ GET  /api/kalshi/match       Semantic match results (instant, background-compute
 GET  /api/kalshi/match_detail Per-source breakdown for one market
                                (params: ticker, threshold — default 0.05)
 GET  /api/kalshi/market/<ticker>  Live single-market fetch: market object + orderbook
-                               + 30-day candlesticks + sibling markets (new in v1.4)
+                               + 30-day candlesticks + sibling markets
 POST /api/kalshi/refresh     Trigger Kalshi re-fetch (runs in background thread)
 
 # Polymarket
 GET  /api/polymarket/match   Fuzzy-match Kalshi ticker against Polymarket Gamma API
                                (param: ticker) — returns top 5 matches with similarity
-                               scores, odds, volume, end date (new in v1.4)
+                               scores, odds, volume, end date
 
 # Pages
 GET  /                       Landing page
 GET  /dashboard              Event Dashboard
 GET  /markets                Market Dashboard
-GET  /market_detail          Market Detail (param: ticker) — new in v1.4
+GET  /market_detail          Market Detail (param: ticker)
 GET  /match_detail           Legacy semantic match detail (param: ticker)
 ```
 
@@ -395,7 +441,7 @@ BSKY_PASSWORD=xxxx-xxxx-xxxx-xxxx   # Bluesky App Password
 python app.py   # → http://localhost:5001
 ```
 
-Kalshi data loads in background (~30–60s). Loading overlay dismisses automatically at ≥1000 markets. Kalshi cache refreshes automatically at the top of each UTC hour.
+Kalshi data loads in background. Loading overlays on both dashboards show live progress: page count, running market count, elapsed time, and step indicators. Dismisses automatically at ≥1000 markets. Kalshi cache refreshes automatically at the top of each UTC hour.
 
 **File changes require:**
 - `.py` files → Flask restart (`Ctrl+C`, `python app.py`)
@@ -420,11 +466,31 @@ Kalshi data loads in background (~30–60s). Loading overlay dismisses automatic
 
 `CLUSTER_THRESHOLD=3` · `CLUSTER_WINDOW_MINUTES=10` · `MAX_EVENTS=50` · `AGE_BREAKING_MAX=30min` · `AGE_DEVELOPING_MAX=240min`
 
+**Quality gate tuning:**
+
+`ENTITY_REQUIRED_WORDS` — set of single-word triggers requiring a named entity per post. Add words to tighten; remove to loosen.
+
+`CLUSTER_THRESHOLD_OVERRIDES` — dict mapping ambiguous keywords to higher weight thresholds. Defaults: `attack/crisis/shooting/crash/explosion/protest/arrested/missing/election → 5`, `sanctions/collision/outbreak/wildfire/floods/coup → 4`. Tune per-word if legitimate events are suppressed.
+
+`_NORP_TO_COUNTRY` (module-level dict) — demonym → canonical country name map for title generation. Add entries for any demonym not resolving correctly.
+
+`COUNTRY_NAMES` — set of country names, demonyms, cities, territories, and regions for entity extraction fallback. Includes Gaza, Kyiv, Tehran, Red Sea, Taiwan Strait, and others.
+
 ### `kalshi_feed.py`
 
 `THRESHOLD_LOW=0.15` · `_BLOCKED_SERIES_PREFIXES=('KXMVE',)` · `PAGE_LIMIT=1000`
 
-**Refresh cadence:** Hourly at the top of each UTC hour (`_hourly_loop`). Cache considered fresh if written within the current UTC hour boundary (`_cache_is_fresh`). Pre-open markets (future `open_time`) filtered at ingest — never enter cache or scoring.
+**Refresh cadence:** Hourly at the top of each UTC hour (`_hourly_loop`). Cache considered fresh if written within the current UTC hour boundary (`_cache_is_fresh`). Pre-open markets (future `open_time`) filtered at ingest.
+
+**Fetch progress:** `_fetch_pages` and `_fetch_running` updated after each API page via `progress_cb`. Both exposed on `/api/kalshi/status`. Loading overlays poll every 2 seconds to display live pull progress.
+
+### `nlp_enhancer.py`
+
+`DEDUP_THRESHOLD_SEMANTIC=0.75` · `DEDUP_THRESHOLD_TFIDF=0.40` · `DEDUP_WINDOW=50`
+
+`_HISTORICAL_YEAR_RE` — regex matching years 2000–2023. Update the upper bound each year to keep the current year from being treated as historical.
+
+`_HISTORICAL_PHRASES` — frozenset of retrospective framing phrases. Add phrases to catch more historical references; be conservative to avoid false suppressions.
 
 ### `gas_prices.py`
 
@@ -437,9 +503,12 @@ Kalshi data loads in background (~30–60s). Loading overlay dismisses automatic
 - **Kalshi volume data:** `volume` and `volume_fp` fields are often `null` in the API response. The Min Vol filter in the Extreme tab and the Position Sizer depth check have limited effectiveness until this is reliably populated.
 - **Bluesky profile filters (F8/F9/F10):** Follower count, post count, and bio filters are implemented but disabled — they require `getProfile` API calls. A profile cache would enable them without rate limit issues.
 - **Kalshi semantic matching:** Uses token overlap (unigrams + word bigrams), not embedding-based similarity. Embedding-based matching would improve quality but requires indexing ~35k markets as vectors.
-- **Polymarket search:** The Gamma API `?q=` search is keyword-based. There is no semantic/embedding search available, so fuzzy matching relies on token overlap against whatever the keyword search returns. Low-similarity results (<18%) should be treated as coincidental.
-- **markets.html size:** At ~3100 lines, consider splitting JS into a separate file if it grows further.
-- **market_detail.html candlestick endpoint:** Uses `period_interval=1440` (daily). Sub-day charts are available via the Kalshi API but not currently exposed.
+- **Polymarket search:** The Gamma API `?q=` search is keyword-based. Fuzzy matching relies on token overlap against keyword search results. Low-similarity results (<18%) should be treated as coincidental.
+- **Event title actor/target ordering:** `_extract_semantic_title` picks the first matching entity as WHO, which can invert actor and target in some posts (e.g. "Russia launches drone attack on Ukrainian..." → WHO=Ukraine because "Ukrainian" appears first in the text). spaCy dependency parsing would fix this correctly.
+- **Event quality gate #5 (planned):** Source diversity requirement — a cluster should come from at least 2 distinct source domains. Would go in the cluster acceptance gate alongside #1–#4.
+- **`_HISTORICAL_YEAR_RE` upper bound:** Currently matches 2000–2023. Update the upper bound annually.
+- **markets.html size:** At ~3200 lines, consider splitting JS into a separate file if it grows further.
+- **market_detail.html candlestick granularity:** Uses `period_interval=1440` (daily). Sub-day charts are available via the Kalshi API but not currently exposed.
 
 ---
 
@@ -450,5 +519,6 @@ Kalshi data loads in background (~30–60s). Loading overlay dismisses automatic
 | v1.0 | Core pipeline: Bluesky feed, event detection, Kalshi browser, market indices bar |
 | v1.1 | NLP (Phases 1/3/4), noise scoring (F1–F7), AAA gas prices, velocity spikes, semantic matching, strategy panel |
 | v1.2 | Keyword Sweep column, noise scoring expanded (F11–F13), `.cbar` collapsible bars, live account/keyword management, full persistence, media badges, full post text, noise filter slider, UI readability pass, title 16px |
-| v1.3 | **Market Dashboard redesign**: 3-column alignment with spacers; `CANONICAL_CATS` (13 always shown, empty dimmed); category filter/page preservation across background refreshes; `overflow-y:hidden` on paginated bodies; `calibratePerPage()` dynamic items-per-page; sub-header removed, Pause/Refresh in title bar. **Extreme tab**: Sort (default Closing ↑), Min Vol, Hide Closed (default ON), ≤5¢/≥95¢ edge, spread% + fee estimate on cards, precise `Xh Ym` time display. **Event Matches**: confidence default 0.60, page preserved on background refresh. Default tab: Extreme. |
-| v1.4 | **Kalshi refresh**: hourly cadence (was daily); pre-open market filter (drops markets with `open_time` in future); Syncing pill in title bar during refresh. **Market Detail page** (`market_detail.html` + `/api/kalshi/market/<ticker>`): live pricing, orderbook, 30-day price chart, sibling outcomes table for multi-outcome markets, YES/NO position toggle with per-side economics, position sizer ($1–$100k log-scale, contracts/fees/net/return/fill check), context callouts (break-even probability, price drift, time value), all prices in `$0.XX` format, collapsible glossaries on all sections. **Polymarket comparison** (`/api/polymarket/match`): fuzzy token-overlap matching against Gamma API, top 5 results with similarity score, odds, volume, end date, arbitrage callout. **Market title hyperlinks** in all three dashboard columns. Fee formula corrected to per-contract basis. |
+| v1.3 | **Market Dashboard redesign**: 3-column alignment with spacers; `CANONICAL_CATS` (13 always shown, empty dimmed); category filter/page preservation; `overflow-y:hidden` on paginated bodies; `calibratePerPage()`; sub-header removed, Pause/Refresh in title bar. **Extreme tab**: Sort (default Closing ↑), Min Vol, Hide Closed (default ON), ≤5¢/≥95¢ edge, spread% + fee on cards, precise `Xh Ym` time. **Event Matches**: confidence default 0.60, page preserved on refresh. Default tab: Extreme. |
+| v1.4 | **Kalshi refresh**: hourly cadence; pre-open market filter; Syncing pill. **Market Detail page**: live pricing, orderbook, 30-day chart, sibling outcomes, YES/NO toggle, position sizer, context callouts, `$0.XX` prices, collapsible glossaries. **Polymarket comparison**: fuzzy matching, top 5 results, arbitrage callout. **Market title hyperlinks** in all columns. Fee formula corrected to per-contract basis. |
+| v1.5 | **Event quality gates (v2.1)**: #1 cluster coherence (entity overlap); #2 entity requirement for 20 ambiguous words (`ENTITY_REQUIRED_WORDS`); #3 historical reference filter (`is_historical_reference` in nlp_enhancer — past-year proximity + retrospective framing); #4 per-word threshold overrides (`CLUSTER_THRESHOLD_OVERRIDES`). **Semantic event titles**: `_extract_semantic_title` builds WHO — WHAT — WHERE from post content using NER, `_NORP_TO_COUNTRY` demonym normalisation (30 entries), action modifier detection, and object phrase extraction (e.g. "BREAKING An Iranian missile attack has damaged Qatar's gas facility" → "Iran — Missile Attack — Qatar"). `COUNTRY_NAMES` expanded with 30+ cities/territories/regions. **Loading overlays**: both dashboards show live Kalshi fetch progress (page count, running market count, elapsed time, step indicators) via `fetch_pages`/`fetch_running` on `/api/kalshi/status`, updated per API page via progress callback. |

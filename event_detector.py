@@ -16,6 +16,17 @@ v2 improvements (based on Reuters Tracer research):
   - Source-tier weighting (major news orgs count more toward threshold)
   - Proximity-aware proper noun check for velocity spikes
   - Event deduplication by keyword overlap (not just exact topic_key)
+
+v2.1 event quality improvements:
+  - #1 Cluster coherence gate: posts in a cluster must share ≥1 named entity
+    (e.g. "attack" about Tehran + "attack" about 2023 street art → suppressed)
+  - #2 Entity requirement for ambiguous words: high-ambiguity single-word triggers
+    (attack, crisis, shooting, crash…) require a named entity in each post
+  - #3 Historical reference filter: posts referencing a past year near the keyword
+    or using retrospective framing ("after the attack", "since the shooting")
+    are excluded from clusters; priority/news accounts are exempt
+  - #4 Per-word threshold overrides: ambiguous single words require higher
+    cluster weight (5 instead of 3) before firing an event
 """
 
 from datetime import datetime, timezone, timedelta
@@ -86,6 +97,44 @@ CRITICAL_FALSE_POSITIVE_CONTEXTS = [
     'norm-breaking', 'path-breaking', 'barrier-breaking', 'game-breaking',
 ]
 
+
+# ─── Improvement #2: High-ambiguity single words that require a named entity ──
+# These words appear in breaking news but are too generic on their own to form
+# a coherent event. A post matching one of these must also contain at least one
+# named entity (person, place, or org) to be counted toward a cluster.
+ENTITY_REQUIRED_WORDS: set = {
+    'attack', 'attacks', 'attacked',
+    'crisis', 'shooting', 'crash', 'explosion', 'protest', 'protests',
+    'arrested', 'arrest', 'offensive', 'invasion', 'sanctions',
+    'collision', 'outbreak', 'wildfire', 'floods', 'missing',
+}
+
+# ─── Improvement #4: Per-word cluster threshold overrides ─────────────────────
+# Generic single-word triggers need more corroborating posts before firing.
+# Specific phrases (e.g. "confirmed dead") keep the global CLUSTER_THRESHOLD.
+CLUSTER_THRESHOLD_OVERRIDES: dict = {
+    'attack':     5,
+    'attacks':    5,
+    'attacked':   5,
+    'crisis':     5,
+    'shooting':   5,
+    'crash':      5,
+    'explosion':  5,
+    'protest':    5,
+    'protests':   5,
+    'arrested':   5,
+    'offensive':  5,
+    'invasion':   5,
+    'sanctions':  4,
+    'collision':  4,
+    'outbreak':   4,
+    'wildfire':   4,
+    'floods':     4,
+    'missing':    5,
+    'election':   5,   # very frequent; needs stronger signal
+    'coup':       4,
+}
+
 CLUSTER_THRESHOLD      = 3
 CLUSTER_WINDOW_MINUTES = 10
 MAX_EVENTS             = 50
@@ -143,6 +192,14 @@ COUNTRY_NAMES = {
     'egypt', 'niger', 'mali', 'haiti', 'kuwait', 'qatar', 'bahrain',
     'iranian', 'russian', 'ukrainian', 'chinese', 'taiwanese', 'israeli',
     'north korean', 'syrian', 'yemeni', 'lebanese', 'kuwaiti',
+    # Key cities, territories, and regions frequently in breaking news
+    'gaza', 'west bank', 'jerusalem', 'kyiv', 'moscow', 'beijing', 'taipei',
+    'tehran', 'baghdad', 'damascus', 'kabul', 'tripoli', 'khartoum',
+    'caracas', 'havana', 'minsk', 'seoul', 'pyongyang', 'doha',
+    'riyadh', 'cairo', 'islamabad', 'kathmandu',
+    'crimea', 'donbas', 'donetsk', 'kharkiv', 'zaporizhzhia',
+    'taiwan strait', 'south china sea', 'red sea', 'black sea',
+    'strait of hormuz', 'nagorno-karabakh',
 }
 
 GEO_ACTION_VERBS_HIGH = {
@@ -217,6 +274,25 @@ def _check_entity_patterns(text: str):
     return None, None
 
 
+
+# ─── Nationality/demonym normalisation for event titles ─────────────────────
+# Maps adjectival/nationality forms to canonical country name
+_NORP_TO_COUNTRY: dict = {
+    'iranian': 'Iran',       'iraqi': 'Iraq',         'israeli': 'Israel',
+    'russian': 'Russia',     'ukrainian': 'Ukraine',   'chinese': 'China',
+    'taiwanese': 'Taiwan',   'north korean': 'North Korea',
+    'south korean': 'South Korea', 'syrian': 'Syria',  'yemeni': 'Yemen',
+    'lebanese': 'Lebanon',   'libyan': 'Libya',        'sudanese': 'Sudan',
+    'qatari': 'Qatar',       'kuwaiti': 'Kuwait',      'bahraini': 'Bahrain',
+    'saudi': 'Saudi Arabia', 'turkish': 'Turkey',      'egyptian': 'Egypt',
+    'pakistani': 'Pakistan', 'indian': 'India',        'afghan': 'Afghanistan',
+    'venezuelan': 'Venezuela', 'cuban': 'Cuba',        'belarusian': 'Belarus',
+    'georgian': 'Georgia',   'armenian': 'Armenia',    'azerbaijani': 'Azerbaijan',
+    'serbian': 'Serbia',     'american': 'US',         'british': 'UK',
+    'french': 'France',      'german': 'Germany',      'italian': 'Italy',
+    'spanish': 'Spain',      'japanese': 'Japan',      'korean': 'South Korea',
+}
+
 # ─── All-Caps Wire Detection ──────────────────────────────────────────────────
 _WIRE_MIN_WORDS  = 5
 _WIRE_CAPS_RATIO = 0.60
@@ -278,28 +354,74 @@ class KeywordClusterStrategy(DetectionStrategy):
                 if ent_sev and self._rank(ent_sev) > self._rank(severity):
                     severity, matched_kw = ent_sev, ent_kw
 
-            if severity and matched_kw:
-                # Negation check: skip if keyword is negated in context
-                if _nlp is not None and _nlp.is_negated(raw_text, matched_kw):
-                    continue
+            if not (severity and matched_kw):
+                continue
 
-                key = matched_kw.lower().replace(' ', '_')
-                clusters[key].append({
-                    'post':     post,
-                    'severity': severity,
-                    'keyword':  matched_kw,
-                    'weight':   post_weight,
-                })
+            # Gate: negation check
+            if _nlp is not None and _nlp.is_negated(raw_text, matched_kw):
+                continue
+
+            # Improvement #3: skip posts that are clearly historical references
+            # e.g. "the October 2023 Hamas attack on Israel" — past year near keyword,
+            # or "after the attack / since the shooting" framing constructions.
+            # Priority/news account posts are exempt — they may legitimately reference
+            # past context while reporting current developments.
+            if (_nlp is not None
+                    and not post.get('is_news_account')
+                    and not post.get('is_priority')
+                    and _nlp.is_historical_reference(raw_text, matched_kw)):
+                continue
+
+            # Improvement #2: entity requirement for high-ambiguity single words.
+            # Words like "attack", "crisis", "shooting" are too generic to form a
+            # coherent event without a named entity (person / place / org) in the post.
+            base_kw = matched_kw.lower().strip()
+            if base_kw in ENTITY_REQUIRED_WORDS:
+                if _nlp is not None:
+                    entities = _nlp.extract_entities(raw_text)
+                else:
+                    # Fallback: require at least one capitalised proper noun
+                    entities = re.findall(r'\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b',
+                                          raw_text)
+                if not entities:
+                    continue   # drop post — no named entity to anchor the event
+
+            key = matched_kw.lower().replace(' ', '_')
+            clusters[key].append({
+                'post':     post,
+                'severity': severity,
+                'keyword':  matched_kw,
+                'weight':   post_weight,
+            })
 
         new_events = []
         existing_topics = {e.get('topic_key') for e in existing_events}
 
         for topic_key, cluster in clusters.items():
             total_weight = sum(c['weight'] for c in cluster)
-            if total_weight < CLUSTER_THRESHOLD:
+
+            # Improvement #4: per-word threshold — ambiguous single-word triggers
+            # require more corroborating posts before firing an event.
+            kw_lower  = cluster[0]['keyword'].lower().strip()
+            threshold = CLUSTER_THRESHOLD_OVERRIDES.get(kw_lower, CLUSTER_THRESHOLD)
+            if total_weight < threshold:
                 continue
+
             if topic_key in existing_topics:
                 continue
+
+            # Improvement #1: cluster coherence — require entity overlap.
+            # For clusters of 3+ posts, at least (coherence_min_fraction) of posts
+            # must share at least one named entity text with another post in the cluster.
+            # This prevents "attack" from grouping Tehran news with street-art posts.
+            # Wire alerts and geo/entity-keyed events are exempt (already entity-grounded).
+            if (len(cluster) >= 3
+                    and _nlp is not None
+                    and not kw_lower.startswith(('geo:', 'ent:', 'person:'))
+                    and kw_lower != 'wire_alert'):
+                coherent = self._check_cluster_coherence(cluster)
+                if not coherent:
+                    continue
             # Phase 3: semantic similarity check (upgrades stem-overlap when ST installed)
             if _nlp is not None:
                 title_preview = f"{cluster[0]['keyword']} — {len(cluster)} posts"
@@ -393,30 +515,250 @@ class KeywordClusterStrategy(DetectionStrategy):
                 return True
         return False
 
+
+    @staticmethod
+    def _check_cluster_coherence(cluster: list) -> bool:
+        """
+        Improvement #1: Entity coherence gate.
+
+        For a cluster to fire as a real event, at least COHERENCE_MIN_POSTS posts
+        must share at least one named entity text with at least one other post.
+
+        Algorithm:
+        1. Extract entity texts from each post (lowercased for comparison).
+        2. Build a union of all entity texts across all posts.
+        3. For each post, check if any of its entities appear in another post.
+        4. Count how many posts pass — if the fraction >= COHERENCE_MIN_FRACTION,
+           the cluster is coherent.
+
+        Degrades gracefully: if NLP is unavailable the gate is bypassed (the
+        _check_cluster_coherence call is only made when _nlp is not None).
+
+        Examples:
+          "Tehran retaliates for attack" + "Israel responds to attack" → share
+          "Israel" / "Tehran" → coherent ✓
+          "Good morning, Asia [attack story]" + "street art after Hamas attack"
+          → share no entities → incoherent, suppressed ✗
+        """
+        COHERENCE_MIN_FRACTION = 0.50  # at least 50% of posts must share an entity
+        COHERENCE_MIN_POSTS    = 1     # at least 1 post pair must share an entity
+
+        post_entity_sets = []
+        for item in cluster:
+            raw = item['post'].get('text', '')
+            ents = _nlp.extract_entities(raw)
+            # Normalise: lowercase, strip, drop very short tokens
+            ent_texts = frozenset(
+                e['text'].lower().strip()
+                for e in ents
+                if len(e['text'].strip()) >= 3
+            )
+            post_entity_sets.append(ent_texts)
+
+        if not any(post_entity_sets):
+            # No entities extracted at all — can't assess coherence, allow through
+            return True
+
+        # Build union of all entities
+        all_entities = frozenset().union(*post_entity_sets)
+        if not all_entities:
+            return True
+
+        # Count posts that share at least one entity with any other post
+        coherent_count = 0
+        for i, ents_i in enumerate(post_entity_sets):
+            if not ents_i:
+                continue
+            for j, ents_j in enumerate(post_entity_sets):
+                if i == j:
+                    continue
+                if ents_i & ents_j:   # non-empty intersection
+                    coherent_count += 1
+                    break             # only count each post once
+
+        fraction = coherent_count / len(cluster)
+        return (fraction >= COHERENCE_MIN_FRACTION
+                or coherent_count >= COHERENCE_MIN_POSTS + 1)
+
+
+
     def _generate_title(self, keyword: str, cluster: list, total_weight: float = 0) -> str:
+        """
+        Build an informative event title from the five semantic components:
+        WHO (named entity/subject) · WHAT (action verb) · WHERE (location) · OBJECT
+
+        Strategy:
+        1. For geo:/person:/ent: prefixed keywords — use the structured key directly
+        2. For wire_alert — parse the wire header (SUBJECT: DETAIL format)
+        3. For all other keywords — extract entities + action phrase from the best post
+        Falls back gracefully at each step so something always renders.
+        """
         count      = len(cluster)
         news_accts = sum(1 for c in cluster if c['post'].get('is_news_account'))
 
-        if keyword.startswith('geo:') or keyword.startswith('person:'):
-            parts   = keyword.replace('geo:', '').replace('person:', '').split('+')
+        if keyword.startswith(('geo:', 'person:', 'ent:')):
+            parts   = keyword.replace('geo:', '').replace('person:', '').replace('ent:', '').split('+')
             subject = parts[0].title() if parts else keyword
             verb    = parts[1].replace('_', ' ').title() if len(parts) > 1 else ''
             kw_display = f"{subject} — {verb}" if verb else subject
+
         elif keyword == 'wire_alert':
-            # Extract subject from the highest-weight post's first 60 chars
-            best_text = cluster[0]['post'].get('text', '')[:60].strip()
-            # Truncate at colon or em-dash (wire format: "SUBJECT: DETAIL")
-            for sep in (':', '\u2014', ' - '):
+            best_text = cluster[0]['post'].get('text', '')[:80].strip()
+            # Strip leading BREAKING / JUST IN / ALERT prefixes
+            best_text = re.sub(
+                r'^(?:BREAKING|JUST IN|ALERT|FLASH|URGENT|UPDATE)[:\s\-—]*',
+                '', best_text, flags=re.IGNORECASE
+            ).strip()
+            for sep in (':', '—', ' - ', ' | '):
                 if sep in best_text:
                     best_text = best_text.split(sep)[0].strip()
                     break
-            kw_display = best_text.title()[:40] if best_text else 'Wire Alert'
-        else:
-            kw_display = keyword.title() if len(keyword) < 30 else keyword[:30].title() + '...'
+            kw_display = best_text.title()[:55] if best_text else 'Wire Alert'
 
-        if news_accts:
-            return f"{kw_display} — {count} posts ({news_accts} news sources)"
-        return f"{kw_display} — {count} posts"
+        else:
+            # General case: extract semantic components from the best post
+            kw_display = self._extract_semantic_title(keyword, cluster)
+
+        suffix = f" ({news_accts} news {'source' if news_accts == 1 else 'sources'})" if news_accts else ''
+        return f"{kw_display} — {count} {'post' if count == 1 else 'posts'}{suffix}"
+
+    def _extract_semantic_title(self, keyword: str, cluster: list) -> str:
+        """
+        Extract WHO · WHAT · WHERE from the highest-weight post to build a
+        descriptive title. Uses NLP entities when available, falls back to
+        regex patterns.
+
+        Target output examples:
+          "Iran — Missile Attack — Qatar Gas Facility"
+          "Israel — Airstrike — Gaza"
+          "Fed Reserve — Rate Decision"
+          "Hurricane Milton — Florida"
+        """
+        # Use the highest-weight post as the primary source
+        best = cluster[0]['post']
+        text = best.get('text', '')
+
+        # Strip common wire prefixes so they don't pollute entity extraction
+        clean = re.sub(
+            r'^(?:BREAKING|JUST IN|ALERT|FLASH|URGENT|UPDATE|DEVELOPING)[:\s\-—]*',
+            '', text, flags=re.IGNORECASE
+        ).strip()
+
+        entities = []
+        if _nlp is not None:
+            entities = _nlp.extract_entities(clean)
+
+        # ── Extract WHO (subject/actor) ───────────────────────────────────────
+        # Priority: GPE/NORP (country/nationality) > PERSON/ORG > first PROPER
+        who = None
+        where = None
+        orgs  = []
+        gpes  = []
+        persons = []
+
+        for e in entities:
+            label = e.get('label', '')
+            txt   = e['text'].strip()
+            if not txt or len(txt) < 2:
+                continue
+            if label in ('GPE', 'LOC', 'NORP', 'FAC'):
+                gpes.append(txt)
+            elif label == 'PERSON':
+                persons.append(txt)
+            elif label in ('ORG', 'PROPER'):
+                orgs.append(txt)
+
+        # Also check for known country names in text (fallback when NLP is regex-only)
+        text_lower = clean.lower()
+        detected_countries = [c.title() for c in COUNTRY_NAMES if c in text_lower and ' ' not in c]
+        detected_countries += [c.title() for c in COUNTRY_NAMES if ' ' in c and c in text_lower]
+
+        # WHO = first GPE or detected country; WHERE = second GPE (if different)
+        if gpes:
+            who   = gpes[0]
+            if len(gpes) > 1 and gpes[1].lower() != gpes[0].lower():
+                where = gpes[1]
+        elif detected_countries:
+            who = detected_countries[0]
+            if len(detected_countries) > 1:
+                where = detected_countries[1]
+        elif persons:
+            who = persons[0]
+        elif orgs:
+            who = orgs[0]
+
+        # ── Extract WHAT (action phrase) ──────────────────────────────────────
+        # Build from keyword + any action verb found in the post near the keyword
+        kw_title = keyword.title()
+
+        # Look for a more descriptive noun phrase around the keyword in the text
+        # Pattern: look for "[adjective] [noun] [keyword]" or "[keyword] [on/of/against] [noun]"
+        action_phrase = None
+
+        # Check for modifier before keyword: "missile attack", "drone strike", "rocket attack"
+        modifiers = re.search(
+            r'\b(missile|drone|rocket|mortar|cyber|suicide|car bomb|'
+            r'nuclear|chemical|biological|coordinated|deadly|fatal|'
+            r'military|armed|terrorist|mass|random|targeted)\s+' + re.escape(keyword),
+            text_lower
+        )
+        if modifiers:
+            action_phrase = modifiers.group(0).title()
+
+        # Check for "[keyword] on/against/in [object]" pattern
+        object_match = re.search(
+            re.escape(keyword) + r'\s+(?:on|against|in|at|near|targeting)\s+([\w\s]{3,30})',
+            text_lower
+        )
+        if object_match and not action_phrase:
+            obj = object_match.group(1).strip()
+            # Don't repeat WHO in the object phrase — whole-word match only
+            who_lower = (who or '').lower()
+            if who_lower and re.match(re.escape(who_lower) + r'\b', obj.lower()):
+                obj = obj[len(who_lower):].strip()
+            if obj and len(obj) >= 3:
+                action_phrase = f"{kw_title} — {obj.title()[:25]}"
+
+        what = action_phrase or kw_title
+
+        # ── Extract WHERE (object/location if not already used as WHO) ────────
+        if not where and gpes and len(gpes) > 1:
+            where = gpes[1]
+        if not where and detected_countries and len(detected_countries) > 1:
+            where = detected_countries[1]
+
+        # ── Normalise demonyms → country names ───────────────────────────────
+        def _norm(name):
+            return _NORP_TO_COUNTRY.get(name.lower(), name) if name else name
+
+        who   = _norm(who)
+        where = _norm(where)
+
+        # ── Deduplicate: drop WHERE if it's the same root as WHO ─────────────
+        def _root(name):
+            return name.lower().replace(' ', '').rstrip('s')[:6] if name else ''
+
+        if where and _root(where) == _root(who):
+            where = None
+
+        # ── Truncate object phrase cleanly at word boundary ───────────────────
+        if where and len(where) > 22:
+            trimmed = where[:22].rsplit(' ', 1)[0]
+            where   = trimmed if trimmed else where[:22]
+
+        # ── Assemble title: WHO — WHAT [— WHERE] ─────────────────────────────
+        parts = []
+        if who:
+            parts.append(who[:30])
+        parts.append(what[:35])
+        if where and _root(where) != _root(who or ''):
+            parts.append(where[:25])
+
+        if parts:
+            return ' — '.join(parts)
+
+        # Final fallback: title-case the keyword
+        return kw_title
 
 
 # ─── Velocity Spike ───────────────────────────────────────────────────────────

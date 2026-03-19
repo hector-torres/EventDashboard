@@ -3115,6 +3115,7 @@ mpStartIntervals();
     var overlay   = document.getElementById('loading-overlay');
     var pollTimer = null;
     var shown     = false;
+    var resolvedImmediately = false;
     var prevCount = -1;
     var serverOk  = false;
     var fetchStarted = false;
@@ -3220,6 +3221,7 @@ mpStartIntervals();
 
           // ── Done ──
           if (count >= THRESHOLD) {
+            resolvedImmediately = !shown;
             clearInterval(pollTimer);
             setStep('kalshi', 'done');
             setStep('index', 'done');
@@ -3233,12 +3235,16 @@ mpStartIntervals();
             // Short pause so user sees the "Ready" state, then dismiss
             setTimeout(function() {
               if (overlay) overlay.style.display = 'none';
-              if (typeof _mpRetry    !== 'undefined') _mpRetry = 0;
-              if (typeof _kSeriesRetry !== 'undefined') _kSeriesRetry = 0;
-              if (typeof mpLoadSeries  === 'function') mpLoadSeries();
-              if (typeof kLoadSeries   === 'function') kLoadSeries();
-              if (typeof mpFetchMatch  === 'function') mpFetchMatch();
-              if (typeof mpUpdateStatus=== 'function') mpUpdateStatus();
+              // Only trigger load functions if the overlay was actually shown —
+              // avoids double-fetching on normal navigation when Kalshi is already loaded.
+              if (shown) {
+                if (typeof _mpRetry      !== 'undefined') _mpRetry = 0;
+                if (typeof _kSeriesRetry !== 'undefined') _kSeriesRetry = 0;
+                if (typeof mpLoadSeries  === 'function') mpLoadSeries();
+                if (typeof kLoadSeries   === 'function') kLoadSeries();
+                if (typeof mpFetchMatch  === 'function') mpFetchMatch();
+                if (typeof mpUpdateStatus=== 'function') mpUpdateStatus();
+              }
             }, 600);
           }
         })
@@ -3258,9 +3264,11 @@ mpStartIntervals();
         });
     }
 
-    // First check immediately, then poll every 2s
+    // Run first check immediately. Only start polling if data isn't already ready.
     checkLoaded();
-    pollTimer = setInterval(checkLoaded, POLL_MS);
+    if (!resolvedImmediately) {
+      pollTimer = setInterval(checkLoaded, POLL_MS);
+    }
   })();
   </script>
 </body>

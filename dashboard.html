@@ -3425,6 +3425,7 @@ document.addEventListener('keydown', e => {
     var overlay   = document.getElementById('loading-overlay');
     var pollTimer = null;
     var shown     = false;
+    var resolvedImmediately = false;
 
     function el(id) { return document.getElementById(id); }
 
@@ -3497,6 +3498,7 @@ document.addEventListener('keydown', e => {
           }
 
           if (count >= THRESHOLD) {
+            resolvedImmediately = !shown;
             clearInterval(pollTimer);
             setStep('kalshi', 'done');
             setStep('index',  'done');
@@ -3508,9 +3510,12 @@ document.addEventListener('keydown', e => {
 
             setTimeout(function() {
               if (overlay) overlay.style.display = 'none';
-              // Dashboard-specific dismiss: refresh feeds + Kalshi series
-              if (typeof fetchAll     === 'function') fetchAll();
-              if (typeof kLoadSeries  === 'function') kLoadSeries(1);
+              // Only trigger init functions if the overlay was actually shown —
+              // avoids double-fetching on normal navigation when Kalshi is already loaded.
+              if (shown) {
+                if (typeof fetchAll    === 'function') fetchAll();
+                if (typeof kLoadSeries === 'function') kLoadSeries(1);
+              }
             }, 600);
           }
         })
@@ -3525,7 +3530,13 @@ document.addEventListener('keydown', e => {
     }
 
     checkLoaded();
-    pollTimer = setInterval(checkLoaded, POLL_MS);
+    // Only start the polling interval if the first check didn't already resolve.
+    // This prevents the interval running indefinitely on normal loads where
+    // Kalshi data is already ready (clearInterval would have fired before
+    // pollTimer was assigned, making it a no-op).
+    if (!resolvedImmediately) {
+      pollTimer = setInterval(checkLoaded, POLL_MS);
+    }
   })();
   </script>
 </body>

@@ -109,30 +109,50 @@ ENTITY_REQUIRED_WORDS: set = {
     'collision', 'outbreak', 'wildfire', 'floods', 'missing',
 }
 
+# ─── Format-label phrases: require entity AND high threshold ──────────────────
+# These CRITICAL/HIGH phrases match the format of a post rather than its content.
+# "breaking news" from a spam aggregator is indistinguishable from a real wire
+# alert on keyword alone — they need a named entity in the post to anchor the
+# event, and a higher cluster weight to prevent single-source spam clusters.
+ENTITY_REQUIRED_PHRASES: set = {
+    'breaking news',
+    'just in',
+    'developing story',
+    'developing situation',
+    'flash alert',
+}
+
 # ─── Improvement #4: Per-word cluster threshold overrides ─────────────────────
 # Generic single-word triggers need more corroborating posts before firing.
 # Specific phrases (e.g. "confirmed dead") keep the global CLUSTER_THRESHOLD.
 CLUSTER_THRESHOLD_OVERRIDES: dict = {
-    'attack':     5,
-    'attacks':    5,
-    'attacked':   5,
-    'crisis':     5,
-    'shooting':   5,
-    'crash':      5,
-    'explosion':  5,
-    'protest':    5,
-    'protests':   5,
-    'arrested':   5,
-    'offensive':  5,
-    'invasion':   5,
-    'sanctions':  4,
-    'collision':  4,
-    'outbreak':   4,
-    'wildfire':   4,
-    'floods':     4,
-    'missing':    5,
-    'election':   5,   # very frequent; needs stronger signal
-    'coup':       4,
+    # Ambiguous single words — need more posts before firing
+    'attack':          5,
+    'attacks':         5,
+    'attacked':        5,
+    'crisis':          5,
+    'shooting':        5,
+    'crash':           5,
+    'explosion':       5,
+    'protest':         5,
+    'protests':        5,
+    'arrested':        5,
+    'offensive':       5,
+    'invasion':        5,
+    'sanctions':       4,
+    'collision':       4,
+    'outbreak':        4,
+    'wildfire':        4,
+    'floods':          4,
+    'missing':         5,
+    'election':        5,
+    'coup':            4,
+    # Format-label phrases — high threshold to require diverse sourcing
+    'breaking_news':         7,
+    'just_in':               6,
+    'developing_story':      6,
+    'developing_situation':  6,
+    'flash_alert':           6,
 }
 
 CLUSTER_THRESHOLD      = 3
@@ -143,18 +163,21 @@ AGE_DEVELOPING_MAX     = 240   # minutes
 
 # ─── Source Tier Weights ─────────────────────────────────────────────────────
 SOURCE_TIER_WEIGHTS = {
+    # Tier 5 — major wire services
     'reuters.com':         5,
     'apnews.com':          5,
     'en.afp.com':          5,
     'afp.com':             5,
     'bbc.co.uk':           5,
     'bbc.com':             5,
+    # Tier 4 — major financial / national papers
     'nytimes.com':         4,
     'wsj.com':             4,
     'ft.com':              4,
     'financialtimes.com':  4,
     'bloomberg.com':       4,
     'economist.com':       4,
+    # Tier 3 — quality nationals and regional internationals
     'theguardian.com':     3,
     'latimes.com':         3,
     'washingtonpost.com':  3,
@@ -166,12 +189,32 @@ SOURCE_TIER_WEIGHTS = {
     'haaretz.com':         3,
     'dw.com':              3,
     'spiegel.de':          3,
-    'fintwitter':          2,
-    'unusual_whales':      2,
+    'nbcnews.com':         3,
+    'cbsnews.com':         3,
+    'npr.org':             3,
+    'axios.com':           3,
+    'politico.com':        3,
+    'scmp.com':            3,          # South China Morning Post
+    'aljazeera.com':       3,
+    'sydmorningherald':    3,          # Sydney Morning Herald (.bsky.social)
+    'fintwitter':          3,          # elevated from 2 — reliable fin alerts
+    # Tier 2 — cable news, aggregators, specialist outlets
     'cnbc.com':            2,
     'cnn.com':             2,
     'foxnews.com':         2,
     'sky.com':             2,
+    'news.sky.com':        2,
+    'unusual_whales':      2,
+    'unusualwhales':       2,
+    'thehill.com':         2,
+    'politico.eu':         2,
+    'thediplomat.com':     2,
+    'usatoday.com':        2,
+    'expressnews.com':     2,          # San Antonio Express-News
+    'dallasnews.com':      2,
+    'globalnews.ca':       2,
+    'ms.now':              2,          # MSNBC / ms.now
+    'msnbc.com':           2,
 }
 
 def _get_source_weight(author_handle: str) -> int:
@@ -340,6 +383,12 @@ class KeywordClusterStrategy(DetectionStrategy):
                 _get_source_weight(post.get('author_handle', ''))
             )
 
+            # Skip dim/hide posts — low-quality signal shouldn't seed event clusters.
+            # Priority/news account posts are never scored (always 'clean'), so this
+            # only filters keyword-sweep posts that the noise scorer flagged.
+            if post.get('noise_bucket') in ('dim', 'hide'):
+                continue
+
             # 1. Standard keyword match
             severity, matched_kw = self._classify(text_lower)
 
@@ -372,11 +421,12 @@ class KeywordClusterStrategy(DetectionStrategy):
                     and _nlp.is_historical_reference(raw_text, matched_kw)):
                 continue
 
-            # Improvement #2: entity requirement for high-ambiguity single words.
-            # Words like "attack", "crisis", "shooting" are too generic to form a
-            # coherent event without a named entity (person / place / org) in the post.
+            # Improvement #2: entity requirement for high-ambiguity single words
+            # and format-label phrases.
+            # Words like "attack", "crisis" and phrases like "breaking news" are too
+            # generic to form a coherent event without a named entity in the post.
             base_kw = matched_kw.lower().strip()
-            if base_kw in ENTITY_REQUIRED_WORDS:
+            if base_kw in ENTITY_REQUIRED_WORDS or base_kw in ENTITY_REQUIRED_PHRASES:
                 if _nlp is not None:
                     entities = _nlp.extract_entities(raw_text)
                 else:
@@ -400,10 +450,13 @@ class KeywordClusterStrategy(DetectionStrategy):
         for topic_key, cluster in clusters.items():
             total_weight = sum(c['weight'] for c in cluster)
 
-            # Improvement #4: per-word threshold — ambiguous single-word triggers
-            # require more corroborating posts before firing an event.
-            kw_lower  = cluster[0]['keyword'].lower().strip()
-            threshold = CLUSTER_THRESHOLD_OVERRIDES.get(kw_lower, CLUSTER_THRESHOLD)
+            # Improvement #4: per-word/phrase threshold — ambiguous triggers require
+            # more corroborating posts before firing an event.
+            kw_lower     = cluster[0]['keyword'].lower().strip()
+            kw_key       = kw_lower.replace(' ', '_')   # phrase form for override lookup
+            threshold    = CLUSTER_THRESHOLD_OVERRIDES.get(
+                kw_key, CLUSTER_THRESHOLD_OVERRIDES.get(kw_lower, CLUSTER_THRESHOLD)
+            )
             if total_weight < threshold:
                 continue
 
@@ -806,6 +859,57 @@ def _word_is_signal(word: str, sample_texts: List[str]) -> bool:
     return nearby_count >= 2
 
 
+def _spike_entity_coherent(word: str, sample_texts: List[str],
+                            is_news_list: List[bool]) -> bool:
+    """
+    Gate #2 for VelocitySpikeStrategy: entity coherence check.
+
+    Require that at least 2 posts share a named entity (capitalised word or
+    acronym) that appears near the spiking word. This prevents a spike from
+    firing when a word appears in many posts but always in completely different
+    contexts (e.g. "people" spiking across unrelated posts).
+
+    News account posts are counted with double weight toward the coherence
+    threshold — a single wire alert near a proper noun is strong signal.
+
+    Returns True (coherent) when:
+      - Any 2+ non-news posts share a nearby entity, OR
+      - 1+ news account post has a nearby entity (wire alerts are pre-vetted)
+    """
+    # Extract the entity set visible near `word` in each post
+    nearby_entities: List[set] = []
+    news_has_entity = False
+
+    for text, is_news in zip(sample_texts[:15], is_news_list[:15]):
+        tokens = text.split()
+        post_entities: set = set()
+        for i, tok in enumerate(tokens):
+            if tok.lower() == word:
+                window = ' '.join(tokens[max(0, i-10): i+11])
+                # Collect all proper nouns / acronyms within the window
+                for m in _PROPERNOUN_RE.finditer(window):
+                    post_entities.add(m.group(0).lower())
+                for m in _ACRONYM_RE.finditer(window):
+                    post_entities.add(m.group(0).lower())
+        if post_entities:
+            if is_news:
+                news_has_entity = True   # wire alert with entity = strong signal
+            nearby_entities.append(post_entities)
+
+    # News account post with entity nearby → pass immediately
+    if news_has_entity:
+        return True
+
+    # Require at least 2 non-news posts that share >=1 entity
+    if len(nearby_entities) < 2:
+        return False
+    for i in range(len(nearby_entities)):
+        for j in range(i + 1, len(nearby_entities)):
+            if nearby_entities[i] & nearby_entities[j]:
+                return True
+    return False
+
+
 class VelocitySpikeStrategy(DetectionStrategy):
     name = "velocity_spike"
 
@@ -818,47 +922,116 @@ class VelocitySpikeStrategy(DetectionStrategy):
         new_events = []
 
         for post in posts:
+            # Gate #1: skip dim/hide posts — same rule as KeywordClusterStrategy.
+            # Low-quality keyword-sweep posts shouldn't seed spike signals.
+            if post.get('noise_bucket') in ('dim', 'hide'):
+                continue
+
             raw_text = post.get('text', '')
-            words    = set(re.findall(r'\b\w{6,}\b', raw_text.lower()))
-            weight   = max(
+
+            # Gate #3: historical reference filter — skip posts where the word
+            # appears in a past-tense / retrospective context.
+            # Applied at ingest so historical words never accumulate weight.
+            if _nlp is not None:
+                words_in_post = set(re.findall(r'\b\w{6,}\b', raw_text.lower()))
+                filtered_words = set()
+                for w in words_in_post:
+                    if not _nlp.is_historical_reference(raw_text, w):
+                        filtered_words.add(w)
+                words = filtered_words
+            else:
+                words = set(re.findall(r'\b\w{6,}\b', raw_text.lower()))
+
+            weight = max(
                 post.get('weight', 1),
                 _get_source_weight(post.get('author_handle', ''))
             )
+            is_news = post.get('is_news_account', False)
             for word in words:
-                self._history[word].append((now, weight, raw_text))
+                # Store (timestamp, weight, text, is_news) for richer gate checks
+                self._history[word].append((now, weight, raw_text, is_news))
                 self._history[word] = [e for e in self._history[word] if e[0] > cutoff]
 
         existing_topics = {e.get('topic_key') for e in existing_events}
 
         for word, entries in self._history.items():
             topic_key    = f"velocity_{word}"
-            total_weight = sum(w for _, w, _ in entries)
+            total_weight = sum(w for _, w, _, _ in entries)
 
             if total_weight < 10:
                 continue
             if topic_key in existing_topics:
                 continue
-            sample_texts = [t for _, _, t in entries]
+
+            sample_texts = [t for _, _, t, _ in entries]
+            is_news_list = [n for _, _, _, n in entries]
+
+            # Gate #2 (signal check + entity coherence): require proper noun proximity
+            # in >=2 posts, AND at least 2 posts sharing a named entity near the word.
             if not _word_is_signal(word, sample_texts):
                 continue
+            if not _spike_entity_coherent(word, sample_texts, is_news_list):
+                continue
+
+            # Build a synthetic cluster structure so we can reuse _generate_title
+            sorted_entries = sorted(entries, key=lambda e: e[1], reverse=True)
+            pseudo_cluster = [
+                {
+                    'post': {'text': t, 'is_news_account': n,
+                              'author_handle': '', 'weight': w},
+                    'weight': w,
+                }
+                for _, w, t, n in sorted_entries[:5]
+            ]
+            news_accts = sum(1 for _, _, _, n in entries if n)
+            title = self._generate_spike_title(word, pseudo_cluster, total_weight, news_accts)
 
             new_events.append({
-                'id':             str(uuid.uuid4())[:8],
-                'topic_key':      topic_key,
-                'title':          f'Volume spike: "{word}" ({len(entries)} mentions, weight {total_weight:.0f})',
-                'severity':       'MEDIUM',
-                'post_count':     len(entries),
-                'weighted_count': total_weight,
-                'keyword':        word,
-                'sample_posts':   [t[:140] for _, _, t in entries[:3]],
-                'sources':        [],
-                'priority_sources': [],
-                'detected_at':    now.isoformat(),
-                'strategy':       self.name,
-                'status':         'breaking',
+                'id':               str(uuid.uuid4())[:8],
+                'topic_key':        topic_key,
+                'title':            title,
+                'severity':         'MEDIUM',
+                'post_count':       len(entries),
+                'weighted_count':   total_weight,
+                'keyword':          word,
+                'sample_posts':     [t[:140] for t in sample_texts[:3]],
+                'sources':          [],
+                'priority_sources': [e[2][:40] for e in entries if e[3]][:3],
+                'detected_at':      now.isoformat(),
+                'strategy':         self.name,
+                'status':           'breaking',
             })
 
         return new_events
+
+    def _generate_spike_title(self, word: str, cluster: list,
+                               total_weight: float, news_accts: int) -> str:
+        """
+        Build a semantic title for a velocity spike event.
+        Reuses KeywordClusterStrategy._extract_semantic_title logic via
+        a pseudo-cluster built from the highest-weight spike entries.
+        Falls back to a descriptive keyword title if extraction yields nothing.
+        """
+        # Try to extract WHO — WHAT — WHERE from the best posts
+        if cluster:
+            semantic = KeywordClusterStrategy._extract_semantic_title(
+                KeywordClusterStrategy, word, cluster
+            )
+            # _extract_semantic_title returns bare keyword.title() as fallback,
+            # so only use the result if it added something beyond the keyword itself
+            if semantic and semantic.lower() != word.lower():
+                count  = len(cluster)
+                suffix = (f" ({news_accts} news "
+                          f"{'source' if news_accts == 1 else 'sources'})"
+                          if news_accts else '')
+                return f"{semantic} — {count} {'post' if count == 1 else 'posts'}{suffix}"
+
+        # Fallback: descriptive spike title (better than raw "Volume spike: word")
+        count  = len(cluster)
+        suffix = (f" ({news_accts} news "
+                  f"{'source' if news_accts == 1 else 'sources'})"
+                  if news_accts else '')
+        return f"{word.title()} Spike — {count} {'post' if count == 1 else 'posts'}{suffix}"
 
 
 # ─── Event Lifecycle ──────────────────────────────────────────────────────────

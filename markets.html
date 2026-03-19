@@ -3173,15 +3173,16 @@ mpStartIntervals();
             var pages   = d.fetch_pages   || 0;
             var running = d.fetch_running || 0;
             var pageStr = pages > 0
-              ? 'Page ' + pages + ' of ~35 fetched'
+              ? 'Page ' + pages + ' fetched'
               : 'Connecting to Kalshi API…';
             var mktStr  = running > 0
               ? ' · ' + running.toLocaleString() + ' markets so far'
               : '';
             if (el('overlay-status')) el('overlay-status').textContent = pageStr + mktStr;
-            if (el('overlay-hint')) el('overlay-hint').textContent = '~35 pages · ~35k markets total · usually 30–60s';
-            // Progress bar now tracks actual page count (35 pages ≈ full pull)
-            var fetchPct = pages > 0 ? Math.min(58, 10 + (pages / 35) * 48) : Math.min(12, 8 + elapsed / 1000);
+            if (el('overlay-hint')) el('overlay-hint').textContent = 'Fetching open markets — this may take several minutes';
+            // Progress bar advances with page count (open-ended — total pages unknown)
+            // Progress bar: advance slowly over time since total page count is unknown
+            var fetchPct = pages > 0 ? Math.min(75, 10 + Math.log(pages + 1) * 14) : Math.min(12, 8 + elapsed / 1000);
             updateBar(fetchPct);
 
           } else if (count > 0 && count < THRESHOLD) {

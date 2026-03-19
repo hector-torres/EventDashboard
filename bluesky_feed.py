@@ -35,7 +35,10 @@ CUSTOM_FEEDS_FILE = os.path.join(os.path.dirname(__file__), "custom_feeds.json")
 
 # ─── Feed Configuration (add/remove feeds here) ───────────────────────────────
 FEED_CONFIG = [
-    # ── High-signal wire/alert phrases ───────────────────────────────────────
+    # ── Tier 1: High-signal breaking news format ──────────────────────────────
+    # "breaking" alone is broad but our entity gates filter low-quality hits.
+    # Format-label phrases (just in / flash alert / developing story) removed —
+    # they are spam-dominated and covered defensively by ENTITY_REQUIRED_PHRASES.
     {
         'id':      'breaking',
         'name':    'Breaking',
@@ -45,59 +48,91 @@ FEED_CONFIG = [
         'enabled': True,
     },
     {
-        'id':      'just_in',
-        'name':    'Just In',
+        'id':      'breaking_news_phrase',
+        'name':    'Breaking News',
         'type':    'search',
-        'query':   'just in',
+        'query':   '"breaking news"',   # quoted phrase — more precise than bare 'breaking'
+        'limit':   20,
+        'enabled': True,
+    },
+
+    # ── Tier 2: Natural disaster — all low base-rate, atomic terms ────────────
+    {
+        'id':      'earthquake',
+        'name':    'Earthquake',
+        'type':    'search',
+        'query':   'earthquake magnitude',
         'limit':   20,
         'enabled': True,
     },
     {
-        'id':      'developing',
-        'name':    'Developing',
+        'id':      'weather_disaster',
+        'name':    'Weather/Wildfire',
         'type':    'search',
-        'query':   'developing story',
+        'query':   'hurricane tornado wildfire',
         'limit':   20,
         'enabled': True,
     },
     {
-        'id':      'flash',
-        'name':    'Flash/Alert',
+        'id':      'disaster_response',
+        'name':    'Disaster Response',
         'type':    'search',
-        'query':   'flash alert',
+        'query':   'evacuated "declared emergency"',
         'limit':   15,
         'enabled': True,
     },
-    # ── Event-type keywords ───────────────────────────────────────────────────
+
+    # ── Tier 2: Conflict / military ───────────────────────────────────────────
     {
-        'id':      'explosion',
-        'name':    'Explosion/Attack',
+        'id':      'explosion_bombing',
+        'name':    'Explosion/Bombing',
         'type':    'search',
-        'query':   'explosion attack strike',
+        'query':   'explosion bombing',
         'limit':   20,
         'enabled': True,
     },
     {
-        'id':      'earthquake',
-        'name':    'Natural Disaster',
+        'id':      'airstrike_missile',
+        'name':    'Airstrike/Missile',
         'type':    'search',
-        'query':   'earthquake hurricane tornado wildfire',
+        'query':   'airstrike missile rockets',
         'limit':   20,
         'enabled': True,
     },
     {
-        'id':      'markets',
+        'id':      'military_movement',
+        'name':    'Military Movement',
+        'type':    'search',
+        'query':   'invasion troops offensive',
+        'limit':   15,
+        'enabled': True,
+    },
+
+    # ── Tier 2: Diplomacy / geopolitics ──────────────────────────────────────
+    {
+        'id':      'diplomacy',
+        'name':    'Diplomacy',
+        'type':    'search',
+        'query':   'ceasefire sanctions embargo',
+        'limit':   15,
+        'enabled': True,
+    },
+
+    # ── Tier 2: Markets / economy ────────────────────────────────────────────
+    # Quoted phrases prevent "rate" alone or "hike" (nature hikes) from matching.
+    {
+        'id':      'markets_economy',
         'name':    'Markets/Economy',
         'type':    'search',
-        'query':   'market crash rate hike fed reserve',
+        'query':   '"market crash" recession unemployment',
         'limit':   20,
         'enabled': True,
     },
     {
-        'id':      'geopolitical',
-        'name':    'Geopolitical',
+        'id':      'fed_rates',
+        'name':    'Fed/Rates',
         'type':    'search',
-        'query':   'missile launches troops invasion sanctions',
+        'query':   '"rate hike" "fed reserve" "interest rate"',
         'limit':   20,
         'enabled': True,
     },

@@ -1505,7 +1505,7 @@
                 <li><strong>Repeat handle</strong> — same account posting 3+ times in one batch (+2–3)</li>
               </ul>
               <div class="sf3-tooltip-thresholds">
-                The slider sets the <strong>hide threshold</strong> (default 5). Posts above the threshold
+                The slider sets the <strong>hide threshold</strong> (default 3). Posts above the threshold
                 are filtered out entirely. Posts within 2 points below it are dimmed.
                 Priority news accounts are never filtered.
               </div>
@@ -1517,12 +1517,12 @@
             <div class="sf3-slider-track">
               <div class="sf3-slider-fill" id="sf3-slider-fill"></div>
               <input type="range" class="sf3-slider" id="sf3-threshold"
-                     min="3" max="10" step="1" value="5"
+                     min="3" max="10" step="1" value="3"
                      oninput="sf3UpdateThreshold()">
             </div>
           </div>
-          <div class="sf3-filter-value" id="sf3-threshold-label">5</div>
-          <div class="sf3-filter-hint" id="sf3-filter-hint">hide ≥5 · dim ≥3</div>
+          <div class="sf3-filter-value" id="sf3-threshold-label">3</div>
+          <div class="sf3-filter-hint" id="sf3-filter-hint">hide ≥3 · dim ≥1</div>
         </div>
       </div>
 
@@ -2181,7 +2181,7 @@ setInterval(renderSpikeBar, 30000);
 // PANEL 3: SEARCH FEED
 // ══════════════════════════════════════════════════════════════════════════════
 
-let sf3HideThreshold = 5;   // noise_score >= this → hidden
+let sf3HideThreshold = 3;   // noise_score >= this → hidden
 let sf3DimThreshold  = 3;   // noise_score >= this → dimmed
 
 function sf3UpdateThreshold() {
@@ -3473,14 +3473,15 @@ document.addEventListener('keydown', e => {
             var pages   = d.fetch_pages   || 0;
             var running = d.fetch_running || 0;
             var pageStr = pages > 0
-              ? 'Page ' + pages + ' of ~35 fetched'
+              ? 'Page ' + pages + ' fetched'
               : 'Connecting to Kalshi API…';
             var mktStr  = running > 0
               ? ' · ' + running.toLocaleString() + ' markets so far'
               : '';
             if (el('overlay-status')) el('overlay-status').textContent = pageStr + mktStr;
-            if (el('overlay-hint'))   el('overlay-hint').textContent   = '~35 pages · ~35k markets total · usually 30–60s';
-            var fetchPct = pages > 0 ? Math.min(58, 10 + (pages / 35) * 48) : Math.min(12, 8 + elapsed / 1000);
+            if (el('overlay-hint'))   el('overlay-hint').textContent   = 'Fetching open markets — this may take several minutes';
+            // Progress bar: advance slowly over time since total page count is unknown
+            var fetchPct = pages > 0 ? Math.min(75, 10 + Math.log(pages + 1) * 14) : Math.min(12, 8 + elapsed / 1000);
             updateBar(fetchPct);
 
           } else if (count > 0 && count < THRESHOLD) {

@@ -459,8 +459,22 @@ Kalshi data loads in background. Loading overlays on both dashboards show live p
 | `CUSTOM_FEEDS_FILE` | `custom_feeds.json` | Persisted keyword feeds |
 | `MAX_CACHED_POSTS` | 150 | Posts in memory |
 
-**Default FEED_CONFIG (8 feeds):**
-`breaking`(30) · `just in`(20) · `developing story`(20) · `flash alert`(15) · `explosion attack strike`(20) · `earthquake hurricane tornado wildfire`(20) · `market crash rate hike fed reserve`(20) · `missile launches troops invasion sanctions`(20)
+**Default FEED_CONFIG (11 feeds):**
+Format labels (`just in`, `developing story`, `flash alert`) removed — spam-dominated; covered defensively by `ENTITY_REQUIRED_PHRASES`. Multi-word queries split into atomic feeds; ambiguous terms quoted.
+
+| ID | Query | Limit |
+|----|-------|-------|
+| `breaking` | `breaking` | 30 |
+| `breaking_news_phrase` | `"breaking news"` (quoted) | 20 |
+| `earthquake` | `earthquake magnitude` | 20 |
+| `weather_disaster` | `hurricane tornado wildfire` | 20 |
+| `disaster_response` | `evacuated "declared emergency"` | 15 |
+| `explosion_bombing` | `explosion bombing` | 20 |
+| `airstrike_missile` | `airstrike missile rockets` | 20 |
+| `military_movement` | `invasion troops offensive` | 15 |
+| `diplomacy` | `ceasefire sanctions embargo` | 15 |
+| `markets_economy` | `"market crash" recession unemployment` | 20 |
+| `fed_rates` | `"rate hike" "fed reserve" "interest rate"` (all quoted) | 20 |
 
 ### `event_detector.py`
 

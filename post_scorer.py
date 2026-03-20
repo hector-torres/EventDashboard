@@ -23,6 +23,7 @@ Active filters (v1.2):
   F11 URL-only posts        — nearly all URL, < 3 real words → +4
   F12 Excessive mentions    — > 3 @mentions         → +3
   F13 Repeated handle       — same handle 3+ times in batch → +2/+3
+  F14 Topical relevance     — no signal words in post       → +3 (hide)
 
 Planned filters (future — require getProfile API call per handle):
   F8  Follower count        — < 10 → +4  |  < 50 → +2
@@ -280,6 +281,103 @@ class RepeatedHandleFilter(NoiseFilter):
         return 0, None
 
 
+
+# ── F14 Topical relevance vocabulary ─────────────────────────────────────────
+# Words and stems that indicate a post is on-topic for a breaking-news /
+# prediction-market context. A post matching NONE of these is almost certainly
+# off-topic (returned by the search API due to fuzzy/stemmed matching).
+#
+# Derived from: BREAKING_KEYWORDS phrases+words, FEED_CONFIG query terms,
+# geopolitical/economic signal vocabulary. Kept as a single flat set for O(1)
+# lookup. Lower-cased — compared against post.get('text','').lower().
+#
+# Design intent: penalise posts with ZERO signal words heavily enough to reach
+# the hide threshold on their own. Posts with ≥1 signal word pass freely.
+_SIGNAL_VOCAB: frozenset = frozenset({
+    # Format signals
+    'breaking', 'alert', 'urgent', 'developing', 'confirmed',
+    # Conflict / military
+    'attack', 'attacked', 'attacks', 'airstrike', 'airstrikes',
+    'missile', 'missiles', 'rocket', 'rockets', 'mortar',
+    'bombing', 'bombed', 'explosion', 'exploded', 'blast',
+    'shooting', 'gunfire', 'gunshot', 'shooter', 'hostage',
+    'troops', 'soldiers', 'military', 'armed', 'weapons',
+    'invasion', 'invaded', 'offensive', 'siege', 'ceasefire',
+    'drone', 'warship', 'intercept', 'intercepted',
+    'casualties', 'wounded', 'killed', 'dead', 'deaths',
+    'strike', 'strikes', 'struck',
+    # Disasters / emergencies
+    'earthquake', 'tsunami', 'hurricane', 'tornado', 'typhoon',
+    'wildfire', 'flood', 'floods', 'flooding', 'eruption',
+    'magnitude', 'evacuation', 'evacuated', 'emergency',
+    'collapsed', 'collapse', 'rescue', 'trapped',
+    # Geopolitical / diplomatic
+    'sanctions', 'embargo', 'diplomatic', 'ceasefire',
+    'treaty', 'agreement', 'talks', 'negotiations', 'summit',
+    'election', 'elections', 'vote', 'votes', 'referendum',
+    'coup', 'protest', 'protests', 'crackdown', 'detained',
+    'arrested', 'arrest', 'indicted', 'convicted', 'sentenced',
+    # Economic / markets
+    'crash', 'recession', 'unemployment', 'inflation',
+    'rate', 'rates', 'hike', 'cut', 'reserve', 'federal',
+    'deficit', 'debt', 'bankrupt', 'default', 'bailout',
+    'tariff', 'tariffs', 'trade', 'gdp', 'stocks', 'markets',
+    # Political
+    'president', 'minister', 'government', 'parliament',
+    'senate', 'congress', 'administration', 'official',
+    'legislation', 'bill', 'policy', 'treaty', 'constitution',
+    # Health / safety
+    'outbreak', 'pandemic', 'epidemic', 'virus', 'vaccine',
+    'recall', 'contamination', 'radiation', 'chemical',
+    # Crime / security
+    'shooting', 'murder', 'homicide', 'terrorism', 'terrorist',
+    'hostage', 'kidnapped', 'ransomware', 'cyberattack',
+    # Key regions (high-frequency in breaking news)
+    'ukraine', 'russia', 'israel', 'iran', 'gaza', 'china',
+    'taiwan', 'korea', 'syria', 'yemen', 'lebanon', 'iraq',
+    'pakistan', 'india', 'afghanistan', 'nato', 'pentagon',
+    'kremlin', 'congress', 'whitehouse',
+    # Wire / news format signals
+    'reuters', 'associated', 'officials', 'sources', 'ministry',
+    'spokesman', 'spokesperson', 'statement', 'announced',
+    'confirmed', 'reported', 'according',
+})
+
+
+
+class TopicalRelevanceFilter(NoiseFilter):
+    """
+    F14 — Topical relevance gate.
+
+    Posts returned by the Bluesky search API sometimes have no meaningful
+    connection to the query — the API can return fuzzy or stemmed matches
+    (e.g. "breaking down a song" matching the "breaking" feed).
+
+    This filter penalises posts that contain NONE of the words in
+    _SIGNAL_VOCAB. A post about music, sports, or daily life will have zero
+    signal words and receives a penalty large enough to reach the hide
+    threshold on its own (default threshold = 3 → penalty = 3 → hide).
+
+    Priority/news account posts bypass this filter entirely (as with all
+    noise filters — they are pre-vetted by account selection).
+
+    Fail-open: any post with ≥1 signal word passes with zero penalty,
+    so legitimate posts are never mis-penalised.
+    """
+    id    = 'topical_relevance'
+    label = 'Topical relevance'
+    PENALTY = 3   # enough to hit hide threshold (SCORE_HIDE = 3 default) alone
+
+    def score(self, post):
+        text = post.get('text', '').lower()
+        if not text:
+            return 0, None
+        # Fast path: check for any signal word using set intersection on tokens
+        tokens = set(re.findall(r'\b[a-z]{3,}\b', text))
+        if tokens & _SIGNAL_VOCAB:
+            return 0, None   # ≥1 signal word — on topic, pass freely
+        return self.PENALTY, 'off_topic(no_signal_words)'
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PLANNED FILTERS  (F8–F10, require profile cache)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -395,6 +493,7 @@ class PostScorer:
             UrlOnlyFilter(),
             MentionCountFilter(),
             RepeatedHandleFilter(),
+            TopicalRelevanceFilter(),        # F14 — off-topic API fuzzy-match gate
             # Profile-dependent — disabled until cache is wired up
             FollowerCountFilter(self._profile_cache),
             PostCountFilter(self._profile_cache),

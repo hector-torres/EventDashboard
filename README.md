@@ -1,4 +1,4 @@
-# Event Trading Terminal — v1.5
+# Event Trading Terminal — v1.6
 **KLTT Holdings** | Internal research tool
 
 Real-time event detection and market intelligence terminal. Monitors Bluesky for breaking news, detects developing events through NLP and velocity analysis, surfaces relevant Kalshi prediction markets, and provides a live market detail view with Polymarket comparison.
@@ -39,14 +39,14 @@ Polls a curated list of Bluesky news accounts every 30 seconds, runs multiple de
 
 ## Pages & Navigation
 
-Title bar on all pages: **Event Trading Terminal** brand (16px bold) → nav links → right side. Market Dashboard right side has Syncing pill, Pause, Refresh, and KLTT Holdings.
+Title bar on all pages: **Event Trading Terminal** brand (16px bold) → nav links → right side. All pages show the KLTT Holdings logo (`/static/kltt-logo.png`, 22px height) in the title bar right side. Market Dashboard right side additionally has Syncing pill, Pause, and Refresh.
 
 ### Event Dashboard (`/dashboard`)
 
 | Panel | Contents |
 |-------|---------|
 | **News Accounts** | Live feed from tracked priority accounts. Collapsible **Tracked Accounts** bar (add/remove, persists to `accounts.txt`). |
-| **Detected Events** | Events CRITICAL→HIGH→MEDIUM with lifecycle badges and semantic WHO — WHAT — WHERE titles. Collapsible **Spikes** bar. |
+| **Detected Events** | Events CRITICAL→HIGH→MEDIUM. Each card shows a two-line header: `[what]` on line 1, `[who]` · `[where]` · `[when]` on line 2 (labels always shown; "unknown" when not extractable). Collapsible **Spikes** bar. |
 | **Keyword Sweep** | Broad keyword search feed. Collapsible **Keywords** bar (add/pause/remove, persists to `custom_feeds.json`). Noise Filter slider. |
 
 All collapsible bars use the shared `.cbar` CSS system: `.cbar` → `.cbar-header` → `.cbar-arrow` + `.cbar-label` + `.cbar-count`, and `.cbar-body`. Collapse rotates arrow; count always visible.
@@ -117,8 +117,8 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 |------|------|
 | `app.py` | Flask routes, poll thread, corpus builder, live market + Polymarket routes |
 | `bluesky_feed.py` | AT Protocol client, feed management, persistence |
-| `post_scorer.py` | Modular noise scoring (10 active filters) |
-| `event_detector.py` | Event detection strategies, quality gates v2.1, semantic title generation |
+| `post_scorer.py` | Modular noise scoring (11 active filters, incl. F14 topical relevance) |
+| `event_detector.py` | Event detection strategies, quality gates v2.1, semantic title generation, structured event components |
 | `nlp_enhancer.py` | NER, negation, semantic dedup, zero-shot, historical reference detection |
 | `kalshi_feed.py` | Kalshi API, market cache, semantic scoring, hourly refresh, fetch progress |
 | `market_indices.py` | Yahoo Finance + AAA index polling |
@@ -127,6 +127,7 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 | `markets.html` | Market Dashboard UI |
 | `market_detail.html` | Live market detail page |
 | `index.html` | Landing page |
+| `static/kltt-logo.png` | Brand logo — served at `/static/kltt-logo.png`; drop file in `static/` subfolder |
 
 **Persistence files:**
 
@@ -153,8 +154,9 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 | F11 | URL-only | < 3 real words | +4 |
 | F12 | Mentions | > 3 / > 5 @mentions | +2 / +4 |
 | F13 | Repeated handle | 3×+ in batch | +2–3 |
+| F14 | Topical relevance | zero signal words in post | +3 (hide) |
 
-Score buckets (default threshold 5): **clean** 0–2, **dim** 3–4 (42% opacity), **hide** ≥5. Threshold adjustable live via slider in Keyword Sweep panel.
+Score buckets (default threshold **3**): **clean** 0–2, **dim** never reached at threshold 3 (hide fires first), **hide** ≥3. Threshold adjustable live via slider in Keyword Sweep panel (default lowered from 5 → 3 in v1.6).
 
 Pending (disabled): F8 follower count, F9 post count, F10 bio — require `getProfile` API calls.
 
@@ -164,9 +166,9 @@ Pending (disabled): F8 follower count, F9 post count, F10 bio — require `getPr
 
 **File:** `event_detector.py` | Pluggable strategy pattern.
 
-**KeywordClusterStrategy** — Groups posts by keywords in a 10-minute window. Source tier weights (Reuters/AP=5 … generic=1). Fires at CLUSTER_THRESHOLD=3 (higher for ambiguous words — see quality gates below). Includes negation check, historical reference filter, entity requirement, coherence check, and semantic dedup.
+**KeywordClusterStrategy** — Groups posts by keywords in a 10-minute window. Source tier weights (Reuters/AP=5 … `fintwitter`=3 … generic=1; 16 accounts from `accounts.txt` now explicitly weighted). Fires at CLUSTER_THRESHOLD=3 (higher for ambiguous words and format-label phrases — see quality gates below). Includes dim/hide skip, negation check, historical reference filter, entity requirement, coherence check, and semantic dedup. Format-label phrases (`breaking:`, `breaking --`) removed from CRITICAL triggers — were matching any post starting with BREAKING: regardless of content.
 
-**VelocitySpikeStrategy** — Detects volume surges. Drives the Spikes bar.
+**VelocitySpikeStrategy** — Detects volume surges. Drives the Spikes bar. Now applies the same quality gates as `KeywordClusterStrategy`: dim/hide post skip at ingest; historical reference filter per-word at ingest; `_spike_entity_coherent` gate (requires ≥2 posts sharing a named entity near the spiking word, or 1 news account post with a nearby entity); semantic titles via `_generate_spike_title` (reuses `_extract_semantic_title`).
 
 **ZeroShotStrategy** — Cosine similarity against 7 category descriptions. Fires MEDIUM events at confidence ≥0.32 (requires sentence-transformers).
 
@@ -178,7 +180,7 @@ Four filters applied before a cluster fires as an event, all fail-open (never su
 
 **#1 — Cluster coherence** (`_check_cluster_coherence`): For clusters of 3+ posts, at least 50% of posts must share at least one named entity with another post in the cluster. Prevents unrelated posts that happen to share a trigger word (e.g. "attack" in a Tehran news story + "attack" in a 2023 street art post) from forming a false event. Wire alerts and geo/entity-keyed clusters are exempt.
 
-**#2 — Entity requirement for ambiguous words** (`ENTITY_REQUIRED_WORDS`): 20 high-ambiguity single-word triggers require at least one named entity in each post before that post is counted toward a cluster. Words include: `attack`, `crisis`, `shooting`, `crash`, `explosion`, `protest`, `arrested`, `invasion`, `sanctions`, `collision`, `outbreak`, `wildfire`, `floods`, `missing`, `election`, `coup`. Falls back to capitalised proper noun regex when spaCy is unavailable.
+**#2 — Entity requirement for ambiguous words and format-label phrases** (`ENTITY_REQUIRED_WORDS` + `ENTITY_REQUIRED_PHRASES`): High-ambiguity single-word triggers (including `breaking`) and format-label phrases (`breaking news`, `just in`, `developing story`, `flash alert`, `developing situation`) require at least one named entity per post. Falls back to capitalised proper noun regex when spaCy is unavailable.
 
 **#3 — Historical reference filter** (`is_historical_reference` in `nlp_enhancer.py`): Posts referencing a past year (2000–2023) within 80 characters of the trigger keyword, or using retrospective framing phrases ("after the attack", "since the shooting", "anniversary of", "looking back"), are excluded from clusters. Priority accounts and news accounts are exempt.
 
@@ -199,7 +201,9 @@ Logic (in priority order):
 
 Example: `"BREAKING An Iranian missile attack has damaged Qatar's main gas facility"` → **"Iran — Missile Attack — Qatar"**
 
-**Impact on Event Matches column:** Richer event titles feed better tokens into the Kalshi semantic match corpus. Markets about "Iran", "missile", "Qatar", and "gas facility" score higher than they would against the bare token "attack". The quality gates also reduce false-positive events, cleaning up the corpus overall.
+**Structured event components:** `_extract_semantic_title` now returns a `{who, what, where}` dict instead of a concatenated string. These components are stored directly on the event object and used by the event card UI to render a two-line header: line 1 is `[what]`, line 2 shows `[who]`, `[where]`, and `[when]` with their labels. Missing components display as "unknown" in muted italic.
+
+**Impact on Event Matches column:** Richer event titles feed better tokens into the Kalshi semantic match corpus. The quality gates also reduce false-positive events, cleaning up the corpus overall.
 
 ---
 
@@ -209,6 +213,7 @@ Example: `"BREAKING An Iranian missile attack has damaged Qatar's main gas facil
 
 - **Phase 1** — NER (spaCy or 5-pass regex) + negation detection
 - **Phase 1 (v1.5)** — `is_historical_reference(text, keyword)`: detects past-year proximity and retrospective framing phrases to filter historical references from event clusters
+- **Phase 1 (v1.6)** — `extract_entities` used by `_spike_entity_coherent` in VelocitySpikeStrategy for entity coherence gating
 - **Phase 3** — Semantic dedup (cosine ≥0.75, or TF-IDF ≥0.40 fallback)
 - **Phase 4** — Zero-shot classification (7 categories)
 
@@ -498,6 +503,12 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 
 **Fetch progress:** `_fetch_pages` and `_fetch_running` updated after each API page via `progress_cb`. Both exposed on `/api/kalshi/status`. Loading overlays poll every 2 seconds to display live pull progress.
 
+### `post_scorer.py`
+
+`SCORE_HIDE=5` · `SCORE_DIM=3` (thresholds; UI default now 3)
+
+`_SIGNAL_VOCAB` — frozenset of ~120 news/event signal words used by F14. Add words to expand topical coverage (e.g. adding a new topic area to your feeds). A post with zero matching tokens receives +3 (hide). Priority/news account posts are exempt.
+
 ### `nlp_enhancer.py`
 
 `DEDUP_THRESHOLD_SEMANTIC=0.75` · `DEDUP_THRESHOLD_TFIDF=0.40` · `DEDUP_WINDOW=50`
@@ -523,6 +534,8 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 - **`_HISTORICAL_YEAR_RE` upper bound:** Currently matches 2000–2023. Update the upper bound annually.
 - **markets.html size:** At ~3200 lines, consider splitting JS into a separate file if it grows further.
 - **market_detail.html candlestick granularity:** Uses `period_interval=1440` (daily). Sub-day charts are available via the Kalshi API but not currently exposed.
+- **Event card [who]/[where] accuracy:** `_extract_semantic_title` uses word-list entity extraction when spaCy is unavailable. Actor/target order can be inverted in posts where a demonym appears before the country name. spaCy dependency parsing would improve this.
+- **F14 `_SIGNAL_VOCAB` coverage:** The vocabulary is manually curated. New feed topics outside the current set (entertainment, sports, etc.) would need vocab additions to avoid false hides.
 
 ---
 
@@ -535,4 +548,5 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 | v1.2 | Keyword Sweep column, noise scoring expanded (F11–F13), `.cbar` collapsible bars, live account/keyword management, full persistence, media badges, full post text, noise filter slider, UI readability pass, title 16px |
 | v1.3 | **Market Dashboard redesign**: 3-column alignment with spacers; `CANONICAL_CATS` (13 always shown, empty dimmed); category filter/page preservation; `overflow-y:hidden` on paginated bodies; `calibratePerPage()`; sub-header removed, Pause/Refresh in title bar. **Extreme tab**: Sort (default Closing ↑), Min Vol, Hide Closed (default ON), ≤5¢/≥95¢ edge, spread% + fee on cards, precise `Xh Ym` time. **Event Matches**: confidence default 0.60, page preserved on refresh. Default tab: Extreme. |
 | v1.4 | **Kalshi refresh**: hourly cadence; pre-open market filter; Syncing pill. **Market Detail page**: live pricing, orderbook, 30-day chart, sibling outcomes, YES/NO toggle, position sizer, context callouts, `$0.XX` prices, collapsible glossaries. **Polymarket comparison**: fuzzy matching, top 5 results, arbitrage callout. **Market title hyperlinks** in all columns. Fee formula corrected to per-contract basis. |
-| v1.5 | **Event quality gates (v2.1)**: #1 cluster coherence (entity overlap); #2 entity requirement for 20 ambiguous words (`ENTITY_REQUIRED_WORDS`); #3 historical reference filter (`is_historical_reference` in nlp_enhancer — past-year proximity + retrospective framing); #4 per-word threshold overrides (`CLUSTER_THRESHOLD_OVERRIDES`). **Semantic event titles**: `_extract_semantic_title` builds WHO — WHAT — WHERE from post content using NER, `_NORP_TO_COUNTRY` demonym normalisation (30 entries), action modifier detection, and object phrase extraction (e.g. "BREAKING An Iranian missile attack has damaged Qatar's gas facility" → "Iran — Missile Attack — Qatar"). `COUNTRY_NAMES` expanded with 30+ cities/territories/regions. **Loading overlays**: both dashboards show live Kalshi fetch progress (page count, running market count, elapsed time, step indicators) via `fetch_pages`/`fetch_running` on `/api/kalshi/status`, updated per API page via progress callback. |
+| v1.5 | **Event quality gates (v2.1)**: #1 cluster coherence (entity overlap); #2 entity requirement for 20 ambiguous words (`ENTITY_REQUIRED_WORDS`); #3 historical reference filter (`is_historical_reference` in nlp_enhancer — past-year proximity + retrospective framing); #4 per-word threshold overrides (`CLUSTER_THRESHOLD_OVERRIDES`). **Semantic event titles**: `_extract_semantic_title` builds WHO — WHAT — WHERE from post content using NER, `_NORP_TO_COUNTRY` demonym normalisation (30 entries), action modifier detection, and object phrase extraction. `COUNTRY_NAMES` expanded with 30+ cities/territories/regions. **Loading overlays**: both dashboards show live Kalshi fetch progress (page count, running market count, elapsed time, step indicators). |
+| v1.6 | **Feed enabled fix**: `bluesky_feed.py` fetch loop now respects the `enabled` flag — disabled feeds are skipped at fetch time (was only persisted, not enforced). **FEED_CONFIG restructured**: 8 → 11 atomic feeds; format-label feeds removed (`just in`, `developing story`, `flash alert`); ambiguous queries split and quoted (`"rate hike"`, `"market crash"`, `"breaking news"`, `"declared emergency"`, `"interest rate"`, `"fed reserve"`). **Source weights**: 16 accounts from `accounts.txt` now explicitly weighted in `SOURCE_TIER_WEIGHTS`; `fintwitter` promoted to 3; `ms.now` (MSNBC) added at 2. **Breaking: phrases removed**: `breaking:`, `breaking --`, `breaking —` removed from CRITICAL triggers — were matching any post opening with "BREAKING:" regardless of content. `breaking` bare word added to `ENTITY_REQUIRED_WORDS` + threshold 5. `ENTITY_REQUIRED_PHRASES` added for format-label phrases. **VelocitySpikeStrategy improvements**: dim/hide skip at ingest; per-word historical reference filter at ingest; `_spike_entity_coherent` gate (entity coherence across posts); semantic titles via `_generate_spike_title` reusing `_extract_semantic_title`. **F14 TopicalRelevanceFilter**: new `post_scorer.py` filter; posts with zero words from `_SIGNAL_VOCAB` (~120 news/event terms) receive +3 (hide). **Structured event components**: `_extract_semantic_title` returns `{who, what, where}` dict; all three strategies store components on event objects. **Event card redesign**: two-line header — `[what]` on line 1; `[who]` · `[where]` · `[when]` on line 2 with bracket labels; "unknown" shown in muted italic when unavailable. **Noise filter default**: keyword sweep hide threshold lowered 5 → 3. **Logo**: KLTT Holdings text replaced with `kltt-logo.png` on all three pages (drop in `EventDashboard/static/`). **Updated panel**: market bar "Updated" text now vertical, inward-facing, single line showing "Updated · Xm ago". **Collapsible bars**: Tracked Accounts, Spikes, Keywords bars now default to collapsed on startup. **Dashboard overlay**: Event Dashboard loading overlay replaced with full step-indicator + page-counter version matching Market Dashboard. **Bug fixes**: overlay `pollTimer` race fixed on both dashboards (both `resolvedImmediately` + `shown` guards); `_generate_spike_title` dict handling; `ZeroShotStrategy` stale variable references (`pseudo_cluster`, `sorted_c`); `self._extract_semantic_title` called on wrong class in spike/zero-shot strategies. |

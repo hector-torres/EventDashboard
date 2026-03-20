@@ -48,7 +48,8 @@ except ImportError:
 BREAKING_KEYWORDS = {
     'CRITICAL': {
         'phrases': [
-            'breaking news', 'breaking:', 'breaking --', 'breaking \u2014',
+            # 'breaking:', 'breaking --', 'breaking —' removed — pure format prefixes.
+            'breaking news',
             'just broke', 'shots fired', 'mass shooting', 'active shooter',
             'confirmed dead', 'multiple casualties', 'martial law',
             'state of emergency', 'amber alert', 'missing child',
@@ -103,6 +104,7 @@ CRITICAL_FALSE_POSITIVE_CONTEXTS = [
 # a coherent event. A post matching one of these must also contain at least one
 # named entity (person, place, or org) to be counted toward a cluster.
 ENTITY_REQUIRED_WORDS: set = {
+    'breaking',                          # bare word — must have a named entity anchor
     'attack', 'attacks', 'attacked',
     'crisis', 'shooting', 'crash', 'explosion', 'protest', 'protests',
     'arrested', 'arrest', 'offensive', 'invasion', 'sanctions',
@@ -127,6 +129,7 @@ ENTITY_REQUIRED_PHRASES: set = {
 # Specific phrases (e.g. "confirmed dead") keep the global CLUSTER_THRESHOLD.
 CLUSTER_THRESHOLD_OVERRIDES: dict = {
     # Ambiguous single words — need more posts before firing
+    'breaking':        5,   # bare word needs entity + corroboration to fire
     'attack':          5,
     'attacks':         5,
     'attacked':        5,
@@ -511,10 +514,25 @@ class KeywordClusterStrategy(DetectionStrategy):
             if _nlp is not None:
                 _nlp.register_event(generated_title, topic_key)
 
+            # Extract semantic components for structured card display.
+            # Covers keyword_cluster events; velocity_spike handled separately.
+            if keyword.startswith(('geo:', 'person:', 'ent:')):
+                parts = keyword.replace('geo:','').replace('person:','').replace('ent:','').split('+')
+                _sem = {'who': parts[0].title() if parts else None,
+                        'what': parts[1].replace('_',' ').title() if len(parts)>1 else keyword.title(),
+                        'where': None}
+            elif keyword == 'wire_alert':
+                _sem = {'who': None, 'what': generated_title.split(' — ')[0], 'where': None}
+            else:
+                _sem = self._extract_semantic_title(keyword, sorted_c)
+
             new_events.append({
                 'id':               str(uuid.uuid4())[:8],
                 'topic_key':        topic_key,
                 'title':            generated_title,
+                'who':              _sem.get('who'),
+                'what':             _sem.get('what') or keyword.title(),
+                'where':            _sem.get('where'),
                 'severity':         severity,
                 'post_count':       len(cluster),
                 'weighted_count':   total_weight,
@@ -669,9 +687,16 @@ class KeywordClusterStrategy(DetectionStrategy):
             kw_display = best_text.title()[:55] if best_text else 'Wire Alert'
 
         else:
-            # General case: extract semantic components from the best post
-            kw_display = self._extract_semantic_title(keyword, cluster)
-
+            # General case: extract semantic components.
+            # _extract_semantic_title returns a dict {who, what, where}.
+            comps = self._extract_semantic_title(keyword, cluster)
+            parts = []
+            if comps.get('who'):
+                parts.append(comps['who'])
+            parts.append(comps.get('what') or keyword.title())
+            if comps.get('where'):
+                parts.append(comps['where'])
+            kw_display = ' — '.join(parts) if parts else keyword.title()
         suffix = f" ({news_accts} news {'source' if news_accts == 1 else 'sources'})" if news_accts else ''
         return f"{kw_display} — {count} {'post' if count == 1 else 'posts'}{suffix}"
 
@@ -799,19 +824,14 @@ class KeywordClusterStrategy(DetectionStrategy):
             trimmed = where[:22].rsplit(' ', 1)[0]
             where   = trimmed if trimmed else where[:22]
 
-        # ── Assemble title: WHO — WHAT [— WHERE] ─────────────────────────────
-        parts = []
-        if who:
-            parts.append(who[:30])
-        parts.append(what[:35])
-        if where and _root(where) != _root(who or ''):
-            parts.append(where[:25])
-
-        if parts:
-            return ' — '.join(parts)
-
-        # Final fallback: title-case the keyword
-        return kw_title
+        # ── Return components as dict ─────────────────────────────────────────
+        if where and _root(where) == _root(who or ''):
+            where = None
+        return {
+            'who':   who[:30]   if who   else None,
+            'what':  what[:35]  if what  else kw_title,
+            'where': where[:25] if where else None,
+        }
 
 
 # ─── Velocity Spike ───────────────────────────────────────────────────────────
@@ -986,10 +1006,16 @@ class VelocitySpikeStrategy(DetectionStrategy):
             news_accts = sum(1 for _, _, _, n in entries if n)
             title = self._generate_spike_title(word, pseudo_cluster, total_weight, news_accts)
 
+            # Extract semantic components from the pseudo-cluster of spike posts
+            _spike_sem = KeywordClusterStrategy._extract_semantic_title(KeywordClusterStrategy, word, pseudo_cluster) if pseudo_cluster else {}
+
             new_events.append({
                 'id':               str(uuid.uuid4())[:8],
                 'topic_key':        topic_key,
                 'title':            title,
+                'who':              _spike_sem.get('who')  if _spike_sem else None,
+                'what':             _spike_sem.get('what') if _spike_sem else word.title(),
+                'where':            _spike_sem.get('where') if _spike_sem else None,
                 'severity':         'MEDIUM',
                 'post_count':       len(entries),
                 'weighted_count':   total_weight,
@@ -1014,11 +1040,15 @@ class VelocitySpikeStrategy(DetectionStrategy):
         """
         # Try to extract WHO — WHAT — WHERE from the best posts
         if cluster:
-            semantic = KeywordClusterStrategy._extract_semantic_title(
+            comps = KeywordClusterStrategy._extract_semantic_title(
                 KeywordClusterStrategy, word, cluster
             )
-            # _extract_semantic_title returns bare keyword.title() as fallback,
-            # so only use the result if it added something beyond the keyword itself
+            # _extract_semantic_title returns a dict {who, what, where}.
+            parts = []
+            if comps.get('who'):   parts.append(comps['who'])
+            if comps.get('what'):  parts.append(comps['what'])
+            if comps.get('where'): parts.append(comps['where'])
+            semantic = ' — '.join(parts) if parts else None
             if semantic and semantic.lower() != word.lower():
                 count  = len(cluster)
                 suffix = (f" ({news_accts} news "
@@ -1144,10 +1174,16 @@ class ZeroShotStrategy(DetectionStrategy):
             if _nlp is not None:
                 _nlp.register_event(title, topic_key)
 
+            # Extract semantic components from the best post in this zero-shot cluster
+            _zs_sem = KeywordClusterStrategy._extract_semantic_title(KeywordClusterStrategy, cat_key, sorted_c) if sorted_c else {}
+
             new_events.append({
                 'id':               str(uuid.uuid4())[:8],
                 'topic_key':        topic_key,
                 'title':            title,
+                'who':              _zs_sem.get('who')  if _zs_sem else None,
+                'what':             _zs_sem.get('what') if _zs_sem else cat_display,
+                'where':            _zs_sem.get('where') if _zs_sem else None,
                 'severity':         'MEDIUM',
                 'post_count':       len(cluster),
                 'weighted_count':   total_weight,

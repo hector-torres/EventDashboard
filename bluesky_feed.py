@@ -35,10 +35,7 @@ CUSTOM_FEEDS_FILE = os.path.join(os.path.dirname(__file__), "custom_feeds.json")
 
 # ─── Feed Configuration (add/remove feeds here) ───────────────────────────────
 FEED_CONFIG = [
-    # ── Tier 1: High-signal breaking news format ──────────────────────────────
-    # "breaking" alone is broad but our entity gates filter low-quality hits.
-    # Format-label phrases (just in / flash alert / developing story) removed —
-    # they are spam-dominated and covered defensively by ENTITY_REQUIRED_PHRASES.
+    # ── High-signal wire/alert phrases ───────────────────────────────────────
     {
         'id':      'breaking',
         'name':    'Breaking',
@@ -48,91 +45,59 @@ FEED_CONFIG = [
         'enabled': True,
     },
     {
-        'id':      'breaking_news_phrase',
-        'name':    'Breaking News',
+        'id':      'just_in',
+        'name':    'Just In',
         'type':    'search',
-        'query':   '"breaking news"',   # quoted phrase — more precise than bare 'breaking'
+        'query':   'just in',
         'limit':   20,
         'enabled': True,
     },
-
-    # ── Tier 2: Natural disaster — all low base-rate, atomic terms ────────────
+    {
+        'id':      'developing',
+        'name':    'Developing',
+        'type':    'search',
+        'query':   'developing story',
+        'limit':   20,
+        'enabled': True,
+    },
+    {
+        'id':      'flash',
+        'name':    'Flash/Alert',
+        'type':    'search',
+        'query':   'flash alert',
+        'limit':   15,
+        'enabled': True,
+    },
+    # ── Event-type keywords ───────────────────────────────────────────────────
+    {
+        'id':      'explosion',
+        'name':    'Explosion/Attack',
+        'type':    'search',
+        'query':   'explosion attack strike',
+        'limit':   20,
+        'enabled': True,
+    },
     {
         'id':      'earthquake',
-        'name':    'Earthquake',
+        'name':    'Natural Disaster',
         'type':    'search',
-        'query':   'earthquake magnitude',
+        'query':   'earthquake hurricane tornado wildfire',
         'limit':   20,
         'enabled': True,
     },
     {
-        'id':      'weather_disaster',
-        'name':    'Weather/Wildfire',
-        'type':    'search',
-        'query':   'hurricane tornado wildfire',
-        'limit':   20,
-        'enabled': True,
-    },
-    {
-        'id':      'disaster_response',
-        'name':    'Disaster Response',
-        'type':    'search',
-        'query':   'evacuated "declared emergency"',
-        'limit':   15,
-        'enabled': True,
-    },
-
-    # ── Tier 2: Conflict / military ───────────────────────────────────────────
-    {
-        'id':      'explosion_bombing',
-        'name':    'Explosion/Bombing',
-        'type':    'search',
-        'query':   'explosion bombing',
-        'limit':   20,
-        'enabled': True,
-    },
-    {
-        'id':      'airstrike_missile',
-        'name':    'Airstrike/Missile',
-        'type':    'search',
-        'query':   'airstrike missile rockets',
-        'limit':   20,
-        'enabled': True,
-    },
-    {
-        'id':      'military_movement',
-        'name':    'Military Movement',
-        'type':    'search',
-        'query':   'invasion troops offensive',
-        'limit':   15,
-        'enabled': True,
-    },
-
-    # ── Tier 2: Diplomacy / geopolitics ──────────────────────────────────────
-    {
-        'id':      'diplomacy',
-        'name':    'Diplomacy',
-        'type':    'search',
-        'query':   'ceasefire sanctions embargo',
-        'limit':   15,
-        'enabled': True,
-    },
-
-    # ── Tier 2: Markets / economy ────────────────────────────────────────────
-    # Quoted phrases prevent "rate" alone or "hike" (nature hikes) from matching.
-    {
-        'id':      'markets_economy',
+        'id':      'markets',
         'name':    'Markets/Economy',
         'type':    'search',
-        'query':   '"market crash" recession unemployment',
+        'query':   'market crash rate hike fed reserve',
         'limit':   20,
         'enabled': True,
     },
     {
-        'id':      'fed_rates',
-        'name':    'Fed/Rates',
+        'id':      'geopolitical',
+        'name':    'Geopolitical',
         'type':    'search',
-        'query':   '"rate hike" "fed reserve" "interest rate"',
+        'query':   'missile launches troops invasion sanctions',
         'limit':   20,
         'enabled': True,
     },
@@ -252,8 +217,10 @@ class BlueSkyFeedManager:
         all_results = []  # list of (raw_post, feed)
 
         with ThreadPoolExecutor(max_workers=12) as pool:
-            # Submit all search feeds
+            # Submit all search feeds — skip disabled feeds
             for feed in self.active_feeds:
+                if not feed.get('enabled', True):
+                    continue
                 f = pool.submit(_fetch_search, feed)
                 tasks[f] = ('feed', feed['id'])
             # Submit all priority account feeds

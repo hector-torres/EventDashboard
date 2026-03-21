@@ -1,4 +1,4 @@
-# Event Trading Terminal — v1.6
+# Event Trading Terminal — v1.7
 **KLTT Holdings** | Internal research tool
 
 Real-time event detection and market intelligence terminal. Monitors Bluesky for breaking news, detects developing events through NLP and velocity analysis, surfaces relevant Kalshi prediction markets, and provides a live market detail view with Polymarket comparison.
@@ -125,7 +125,7 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 | `gas_prices.py` | AAA gas price scraper |
 | `dashboard.html` | Event Dashboard UI |
 | `markets.html` | Market Dashboard UI |
-| `market_detail.html` | Live market detail page |
+| `market_detail.html` | Live market detail page — two-column layout, three prediction market comparisons, paginated siblings, price chart fix |
 | `index.html` | Landing page |
 | `static/kltt-logo.png` | Brand logo — served at `/static/kltt-logo.png`; drop file in `static/` subfolder |
 
@@ -322,6 +322,8 @@ Opens in a new tab from any market card title in the dashboard. All data is fetc
 | `GET /api/kalshi/market/<ticker>` | Market object, orderbook, 30-day candlesticks, sibling markets in same event |
 | `GET /api/kalshi/match_detail?ticker=TICKER&threshold=0.05` | Per-source semantic match breakdown |
 | `GET /api/polymarket/match?ticker=TICKER` | Top 5 fuzzy-matched Polymarket markets |
+| `GET /api/manifold/match?ticker=TICKER` | Top 5 fuzzy-matched Manifold Markets questions (new in v1.7) |
+| `GET /api/metaculus/match?ticker=TICKER` | Top 5 fuzzy-matched Metaculus questions (new in v1.7) |
 
 ### `/api/kalshi/market/<ticker>` — Response Shape
 
@@ -412,10 +414,13 @@ GET  /api/kalshi/market/<ticker>  Live single-market fetch: market object + orde
                                + 30-day candlesticks + sibling markets
 POST /api/kalshi/refresh     Trigger Kalshi re-fetch (runs in background thread)
 
-# Polymarket
-GET  /api/polymarket/match   Fuzzy-match Kalshi ticker against Polymarket Gamma API
-                               (param: ticker) — returns top 5 matches with similarity
-                               scores, odds, volume, end date
+# Prediction Market Comparisons
+GET  /api/polymarket/match   Fuzzy-match against Polymarket Gamma API
+                               (param: ticker) — top 5, similarity score, odds, volume, end date
+GET  /api/manifold/match     Fuzzy-match against Manifold Markets
+                               (param: ticker) — top 5, probability, volume (Mana), close date
+GET  /api/metaculus/match    Fuzzy-match against Metaculus
+                               (param: ticker) — top 5, community probability, forecaster count
 
 # Pages
 GET  /                       Landing page
@@ -517,6 +522,10 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 
 `_HISTORICAL_PHRASES` — frozenset of retrospective framing phrases. Add phrases to catch more historical references; be conservative to avoid false suppressions.
 
+### `app.py`
+
+`_LOCATION_ALIASES` — dict mapping city names to Kalshi location codes (e.g. `'san antonio' → ['satx']`). Extend when new weather/temperature markets for unlisted cities are added. Search automatically expands city name queries to their corresponding codes and vice versa.
+
 ### `gas_prices.py`
 
 `REFRESH_HOURS_UTC={0,8,16}`
@@ -534,6 +543,8 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 - **`_HISTORICAL_YEAR_RE` upper bound:** Currently matches 2000–2023. Update the upper bound annually.
 - **markets.html size:** At ~3200 lines, consider splitting JS into a separate file if it grows further.
 - **market_detail.html candlestick granularity:** Uses `period_interval=1440` (daily). Sub-day charts are available via the Kalshi API but not currently exposed.
+- **Manifold/Metaculus matching:** Same token-overlap approach as Polymarket — semantic similarity not used. Manifold volume is in Mana (M), not dollars. Metaculus shows forecaster count rather than volume.
+- **Kalshi dual-domain coverage:** Markets are fetched from both `api.elections.kalshi.com` and `trading-api.kalshi.com` and merged by ticker. If Kalshi adds a third domain or restructures their APIs, `KALSHI_TRADING_BASE` in `kalshi_feed.py` would need updating.
 - **Event card [who]/[where] accuracy:** `_extract_semantic_title` uses word-list entity extraction when spaCy is unavailable. Actor/target order can be inverted in posts where a demonym appears before the country name. spaCy dependency parsing would improve this.
 - **F14 `_SIGNAL_VOCAB` coverage:** The vocabulary is manually curated. New feed topics outside the current set (entertainment, sports, etc.) would need vocab additions to avoid false hides.
 
@@ -549,4 +560,5 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 | v1.3 | **Market Dashboard redesign**: 3-column alignment with spacers; `CANONICAL_CATS` (13 always shown, empty dimmed); category filter/page preservation; `overflow-y:hidden` on paginated bodies; `calibratePerPage()`; sub-header removed, Pause/Refresh in title bar. **Extreme tab**: Sort (default Closing ↑), Min Vol, Hide Closed (default ON), ≤5¢/≥95¢ edge, spread% + fee on cards, precise `Xh Ym` time. **Event Matches**: confidence default 0.60, page preserved on refresh. Default tab: Extreme. |
 | v1.4 | **Kalshi refresh**: hourly cadence; pre-open market filter; Syncing pill. **Market Detail page**: live pricing, orderbook, 30-day chart, sibling outcomes, YES/NO toggle, position sizer, context callouts, `$0.XX` prices, collapsible glossaries. **Polymarket comparison**: fuzzy matching, top 5 results, arbitrage callout. **Market title hyperlinks** in all columns. Fee formula corrected to per-contract basis. |
 | v1.5 | **Event quality gates (v2.1)**: #1 cluster coherence (entity overlap); #2 entity requirement for 20 ambiguous words (`ENTITY_REQUIRED_WORDS`); #3 historical reference filter (`is_historical_reference` in nlp_enhancer — past-year proximity + retrospective framing); #4 per-word threshold overrides (`CLUSTER_THRESHOLD_OVERRIDES`). **Semantic event titles**: `_extract_semantic_title` builds WHO — WHAT — WHERE from post content using NER, `_NORP_TO_COUNTRY` demonym normalisation (30 entries), action modifier detection, and object phrase extraction. `COUNTRY_NAMES` expanded with 30+ cities/territories/regions. **Loading overlays**: both dashboards show live Kalshi fetch progress (page count, running market count, elapsed time, step indicators). |
+| v1.7 | **Market Detail page redesign**: two-column layout (`ctx-sizer-cols` for context+sizer side-by-side, `inner-cols` for chart+orderbook side-by-side); three prediction market comparison panels side-by-side (`comparisons-cols` — Polymarket, Manifold, Metaculus); Matched Events + Posts in `matches-cols` full-width grid; siblings table paginated (10 per page, Prev/Next nav); price chart fixed (`close_dollars` field, was silently returning null); Order Book header moved inside bordered box. **Manifold + Metaculus**: new `/api/manifold/match` and `/api/metaculus/match` routes; `buildManifold` + `buildMetaculus` JS functions; all three comparisons fetched in parallel on page load. **Polymarket**: closed markets filtered from comparison results. **Dual Kalshi API**: `kalshi_feed.py` now fetches from both `api.elections.kalshi.com` and `trading-api.kalshi.com` and merges by ticker — covers weather/temperature and other non-election markets previously missing. `/api/kalshi/market/<ticker>` also tries both domains. **Category name fix**: `_infer_category` corrected `'Climate'` → `'Climate and Weather'` and `'Tech & Science'` → `'Science and Technology'` to match `CANONICAL_CATS`. **All Markets search redesign**: search bar moved to top of column (aligns with Confidence slider in col 2); filter priority enforced — category primary, series secondary, search tertiary; `mpBuildSearchSeriesList` fetches all matching series in one background call (stable across pagination); `mpSelectCat` preserves search query and re-scopes it; `mpSelectSeries` clears search on drill-down. **Search expanded**: matches `series_ticker` + `event_ticker` in addition to title/subtitle/ticker. **`_LOCATION_ALIASES`**: 40+ city-name → Kalshi location-code mappings so searching "san antonio" finds `KXHIGHTSATX` markets. |
 | v1.6 | **Feed enabled fix**: `bluesky_feed.py` fetch loop now respects the `enabled` flag — disabled feeds are skipped at fetch time (was only persisted, not enforced). **FEED_CONFIG restructured**: 8 → 11 atomic feeds; format-label feeds removed (`just in`, `developing story`, `flash alert`); ambiguous queries split and quoted (`"rate hike"`, `"market crash"`, `"breaking news"`, `"declared emergency"`, `"interest rate"`, `"fed reserve"`). **Source weights**: 16 accounts from `accounts.txt` now explicitly weighted in `SOURCE_TIER_WEIGHTS`; `fintwitter` promoted to 3; `ms.now` (MSNBC) added at 2. **Breaking: phrases removed**: `breaking:`, `breaking --`, `breaking —` removed from CRITICAL triggers — were matching any post opening with "BREAKING:" regardless of content. `breaking` bare word added to `ENTITY_REQUIRED_WORDS` + threshold 5. `ENTITY_REQUIRED_PHRASES` added for format-label phrases. **VelocitySpikeStrategy improvements**: dim/hide skip at ingest; per-word historical reference filter at ingest; `_spike_entity_coherent` gate (entity coherence across posts); semantic titles via `_generate_spike_title` reusing `_extract_semantic_title`. **F14 TopicalRelevanceFilter**: new `post_scorer.py` filter; posts with zero words from `_SIGNAL_VOCAB` (~120 news/event terms) receive +3 (hide). **Structured event components**: `_extract_semantic_title` returns `{who, what, where}` dict; all three strategies store components on event objects. **Event card redesign**: two-line header — `[what]` on line 1; `[who]` · `[where]` · `[when]` on line 2 with bracket labels; "unknown" shown in muted italic when unavailable. **Noise filter default**: keyword sweep hide threshold lowered 5 → 3. **Logo**: KLTT Holdings text replaced with `kltt-logo.png` on all three pages (drop in `EventDashboard/static/`). **Updated panel**: market bar "Updated" text now vertical, inward-facing, single line showing "Updated · Xm ago". **Collapsible bars**: Tracked Accounts, Spikes, Keywords bars now default to collapsed on startup. **Dashboard overlay**: Event Dashboard loading overlay replaced with full step-indicator + page-counter version matching Market Dashboard. **Bug fixes**: overlay `pollTimer` race fixed on both dashboards (both `resolvedImmediately` + `shown` guards); `_generate_spike_title` dict handling; `ZeroShotStrategy` stale variable references (`pseudo_cluster`, `sorted_c`); `self._extract_semantic_title` called on wrong class in spike/zero-shot strategies. |

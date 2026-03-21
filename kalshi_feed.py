@@ -26,8 +26,13 @@ from typing import List, Dict, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-KALSHI_BASE        = 'https://api.elections.kalshi.com/trade-api/v2'
-MARKETS_URL        = f'{KALSHI_BASE}/markets'
+# Kalshi operates two API domains — elections and main trading.
+# Weather, temperature, sports, and other non-election markets live on the
+# trading API. Both use the same schema so we pull from both and merge.
+KALSHI_BASE         = 'https://api.elections.kalshi.com/trade-api/v2'
+KALSHI_TRADING_BASE = 'https://trading-api.kalshi.com/trade-api/v2'
+MARKETS_URL         = f'{KALSHI_BASE}/markets'
+MARKETS_URL_TRADING = f'{KALSHI_TRADING_BASE}/markets'
 SERIES_URL         = f'{KALSHI_BASE}/series'
 PAGE_LIMIT         = 1000          # max per Kalshi docs
 
@@ -149,7 +154,7 @@ def _is_open_for_trading(market: Dict, now_utc: datetime) -> bool:
 
 def _fetch_all_open_markets(progress_cb=None) -> Tuple[List[Dict], Optional[str]]:
     """
-    Pull all open markets from Kalshi using cursor pagination.
+    Pull all open markets from both Kalshi API domains and merge results.
     Returns (markets_list, error_string_or_None).
     Optional progress_cb(pages, running_count) called after each page lands.
     """
@@ -157,7 +162,111 @@ def _fetch_all_open_markets(progress_cb=None) -> Tuple[List[Dict], Optional[str]
     import urllib.error
     import ssl
 
-    # macOS Python ships without system certs; bypass SSL verification for Kalshi API
+    _ssl_ctx = ssl.create_default_context()
+    _ssl_ctx.check_hostname = False
+    _ssl_ctx.verify_mode    = ssl.CERT_NONE
+
+    now_utc = datetime.now(timezone.utc)
+
+    def _fetch_from(base_url, progress_cb=None, page_offset=0):
+        """Paginate one API domain. Returns (markets, error, pages_fetched)."""
+        markets = []
+        cursor  = None
+        page    = 0
+        sample_logged  = False
+        not_yet_open   = 0
+
+        while True:
+            params = f'?limit={PAGE_LIMIT}&status=open'
+            if cursor:
+                params += f'&cursor={cursor}'
+            url = base_url + '/markets' + params
+
+            data = None
+            last_err = None
+            for attempt in range(3):
+                try:
+                    req  = urllib.request.Request(url, headers={'Accept': 'application/json'})
+                    with urllib.request.urlopen(req, context=_ssl_ctx, timeout=60) as resp:
+                        data = json.loads(resp.read().decode())
+                    last_err = None
+                    break
+                except urllib.error.HTTPError as e:
+                    return markets, f'HTTP {e.code}: {e.reason}', page
+                except Exception as e:
+                    last_err = str(e)
+                    logger.warning(f'[Kalshi] {base_url} page {page} attempt {attempt+1} failed: {e}')
+                    time.sleep(2 ** attempt)
+            if data is None:
+                logger.error(f'[Kalshi] Pagination stopped at {base_url} page {page}: {last_err}')
+                return markets, last_err, page
+
+            raw_batch = data.get('markets', [])
+            filtered_batch = []
+            for m in raw_batch:
+                if any(
+                    (m.get('series_ticker') or m.get('event_ticker') or m.get('ticker') or '').upper().startswith(pfx)
+                    for pfx in _BLOCKED_SERIES_PREFIXES
+                ):
+                    continue
+                if not _is_open_for_trading(m, now_utc):
+                    not_yet_open += 1
+                    continue
+                filtered_batch.append(m)
+            markets.extend(filtered_batch)
+            page += 1
+
+            if progress_cb is not None:
+                try:
+                    progress_cb(page_offset + page, len(markets))
+                except Exception:
+                    pass
+
+            if not sample_logged and filtered_batch:
+                os.makedirs(DATA_DIR, exist_ok=True)
+                with open(DEBUG_FILE, 'w') as f:
+                    json.dump(filtered_batch[0], f, indent=2)
+                sample_logged = True
+
+            cursor = data.get('cursor')
+            if not cursor or not raw_batch:
+                break
+
+            logger.info(f'[Kalshi] {base_url} page {page}: {len(markets)} markets so far…')
+
+        if not_yet_open:
+            logger.info(f'[Kalshi] {base_url}: dropped {not_yet_open:,} pre-open markets.')
+        return markets, None, page
+
+    # ── Fetch from both API domains ───────────────────────────────────────────
+    logger.info('[Kalshi] Fetching from elections API…')
+    mkts_elections, err1, pages1 = _fetch_from(KALSHI_BASE, progress_cb, page_offset=0)
+    logger.info(f'[Kalshi] Elections API: {len(mkts_elections)} markets, {pages1} pages')
+
+    logger.info('[Kalshi] Fetching from trading API…')
+    mkts_trading, err2, pages2 = _fetch_from(
+        KALSHI_TRADING_BASE, progress_cb, page_offset=pages1
+    )
+    logger.info(f'[Kalshi] Trading API: {len(mkts_trading)} markets, {pages2} pages')
+
+    # Merge — deduplicate by ticker
+    seen_tickers = {m.get('ticker', '').upper() for m in mkts_elections}
+    new_from_trading = [m for m in mkts_trading
+                        if m.get('ticker', '').upper() not in seen_tickers]
+    markets = mkts_elections + new_from_trading
+    logger.info(f'[Kalshi] Merged: {len(markets)} total markets '
+                f'({len(new_from_trading)} unique from trading API)')
+
+    err = err1 or err2  # report any error but don't fail if one domain succeeded
+    logger.info(f'[Kalshi] Fetched {len(markets)} open markets total.')
+    return markets, err
+
+def _fetch_all_open_markets_OLD_UNUSED(progress_cb=None):
+    """Kept for reference only — replaced by dual-domain fetch above."""
+    import urllib.request
+    import urllib.error
+    import ssl
+
     _ssl_ctx = ssl.create_default_context()
     _ssl_ctx.check_hostname = False
     _ssl_ctx.verify_mode    = ssl.CERT_NONE
@@ -166,8 +275,8 @@ def _fetch_all_open_markets(progress_cb=None) -> Tuple[List[Dict], Optional[str]
     cursor  = None
     page    = 0
     sample_logged  = False
-    not_yet_open   = 0   # count of pre-open markets filtered out
-    now_utc = datetime.now(timezone.utc)   # snapshot once for the whole fetch
+    not_yet_open   = 0
+    now_utc = datetime.now(timezone.utc)
 
     while True:
         params = f'?limit={PAGE_LIMIT}&status=open'
@@ -422,14 +531,14 @@ _CAT_RAW_FEED = [
                         'NYTOAI','OAIAGI','AUCTIONPRICETREY','SCOTREF',
                         'STARSHIPMARS','TESLACEOCHANGE','TESLAOPTIMUS',
                         'LEAVEPOWELL','JPMCEOCHANGE']),
-    ('Tech & Science', ['KXAI','KXLLM','KXLLAMA','KXCLAUDE','KXOAI','KXGPT','KXGROK',
+    ('Science and Technology', ['KXAI','KXLLM','KXLLAMA','KXCLAUDE','KXOAI','KXGPT','KXGROK',
                         'KXBESTLLM','KXCODINGMODEL','KXTOPAI','KXTECHRANKL','KXSPACEX',
                         'KXSTARSHIP','KXNEWGLENN','KXMOON','KXMARS','KXCOLONIZE',
                         'KXROBOTMARS','KXELONMARS','KXBLUESPACEX','KXIPHONE','KXAIPLAUSE',
                         'KXAILEGIS','KXQUANTUM','KXFUSION','KXFDAAPPROVAL','KXFDATYPE',
                         'KXREACTOR','KXDATACENTER','KXDATASET','KXJENSEN','KXMETAHEADCOUNT',
                         'KXSNAPRESTRICT','KXSOCIALMEDIABAN','KXLIVENATION']),
-    ('Climate',        ['KXWARMING','KXGTEMP','KXARCTICICE','KXSOLAR','KXEUCLIMATE',
+    ('Climate and Weather', ['KXWARMING','KXGTEMP','KXARCTICICE','KXSOLAR','KXEUCLIMATE',
                         'KXUSCLIMATE','KXINDIACLIMATE','KXEARTHQUAKE','KXTORNADO',
                         'KXHIGH','KXLOWT','KXRAIN','KXSNOW','KXTHAIL','KXMETEOR',
                         'KXERUPT','KXHMON','USCLIMATE','INDIACLIMATE','EUCLIMATE']),

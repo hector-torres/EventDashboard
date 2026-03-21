@@ -880,9 +880,9 @@
     /* ── Browse search bar ─────────────────── */
     .k-search-bar {
       display: flex; align-items: center; gap: 6px;
-      padding: 6px 10px;
-      border-bottom: 1px solid #161616;
-      background: #0c0c0c;
+      padding: 5px 12px;   /* matches mp-conf-row padding exactly */
+      border-bottom: 1px solid #141414;
+      background: #0b0b0b;
       flex-shrink: 0;
     }
     .k-search-input {
@@ -1520,21 +1520,20 @@
         <div class="mp-col-meta" id="mp-series-header-lbl">Select a category</div>
       </div>
 
-      <!-- Spacers to align with Expiry column's tabs + filter strip -->
+      <!-- Spacer matching strat-tabs row in col 3 / col 2 -->
       <div class="mp-col-spacer-tabs"></div>
-      <div class="mp-col-spacer-filter"></div>
+
+      <!-- Search bar — sits at same level as Confidence slider in col 2 -->
+      <div class="k-search-bar" style="flex-shrink:0;">
+        <input class="k-search-input" id="mp-search-input"
+               placeholder="Search all markets…" oninput="mpOnSearch()" autocomplete="off">
+        <button class="k-search-clear" id="mp-search-clear"
+                onclick="mpClearSearch()" style="display:none">✕</button>
+      </div>
 
       <!-- Category filter pills -->
       <div class="mp-cat-filter-row" id="mp-browse-cat-row" style="flex-shrink:0;">
         <span style="font-size:8px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#2a2a2a;">loading…</span>
-      </div>
-
-      <!-- Search bar -->
-      <div class="k-search-bar" style="flex-shrink:0;">
-        <input class="k-search-input" id="mp-search-input"
-               placeholder="Search markets…" oninput="mpOnSearch()" autocomplete="off">
-        <button class="k-search-clear" id="mp-search-clear"
-                onclick="mpClearSearch()" style="display:none">✕</button>
       </div>
 
       <!-- Filters -->
@@ -2743,6 +2742,12 @@ function mpSelectCat(cat, el) {
   mpActiveCategory = cat;
   mpActiveSeries   = null;
   mpCurrentPage    = 1;
+  // When a category is clicked, clear the active series and reset the series
+  // search cache so the series panel rebuilds for the new category scope.
+  // Do NOT clear the search query — it re-scopes to the new category instead.
+  mpActiveSeries = null;
+  _lastSearchForSeries = '';
+
   document.querySelectorAll('#mp-cat-list .k-cat-row').forEach(r => r.classList.remove('active'));
   if (el) el.classList.add('active');
   else {
@@ -2766,39 +2771,68 @@ function mpSelectCat(cat, el) {
     row.onclick = () => mpSelectSeries(s.ticker, row);
     col.appendChild(row);
   }
-  document.getElementById('mp-market-body').innerHTML =
-    '<div style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
+  if (mpSearchQuery) {
+    // Search is active — re-run it scoped to the newly selected category
+    mpCurrentPage = 1;
+    mpFetchBrowseMarkets();
+    mpBuildSearchSeriesList(mpSearchQuery);
+  } else {
+    document.getElementById('mp-market-body').innerHTML =
+      '<div style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
+  }
 }
 
 async function mpSelectSeries(ticker, el) {
   mpActiveSeries = ticker;
   mpCurrentPage  = 1;
+  // Clear any active search when navigating by category/series
+  if (mpSearchQuery) {
+    mpSearchQuery = '';
+    _lastSearchForSeries = '';
+    const inp = document.getElementById('mp-search-input');
+    if (inp) inp.value = '';
+    const clr = document.getElementById('mp-search-clear');
+    if (clr) clr.style.display = 'none';
+  }
   document.querySelectorAll('#mp-series-list .k-series-row').forEach(r => r.classList.remove('active'));
   if (el) el.classList.add('active');
   await mpFetchBrowseMarkets();
 }
 
 async function mpFetchBrowseMarkets() {
-  if (!mpActiveSeries) return;
+  // Gate: need either a search query OR an active series to fetch.
+  // Category alone without a series shows "← Select a series" — user must pick one
+  // unless they're also searching.
+  if (!mpSearchQuery && !mpActiveSeries) return;
+
   const body = document.getElementById('mp-market-body');
   body.innerHTML = '<div style="padding:12px;font-size:10px;color:#222">Loading…</div>';
+
   const params = new URLSearchParams({
-    series_ticker: mpActiveSeries,
     min_price: mpPriceMin,
     max_price: mpPriceMax,
     sort:      mpSortMode,
     page:      mpCurrentPage,
     per_page:  MP_PER_PAGE,
   });
-  if (mpDaysMin > 0)    params.set('min_days', mpDaysMin);
-  if (mpDaysMax < 1500) params.set('max_days', mpDaysMax);
-  if (mpSearchQuery)    params.set('q', mpSearchQuery);
+
+  // Filter priority: category (primary) → series (secondary) → search query (tertiary)
+  // Category is always sent when selected — search never overrides it.
+  // Series is only sent when no search query is active (search replaces series drill-down).
+  // Search query is scoped within the active category if one is selected.
+  if (mpActiveCategory)                   params.set('category',      mpActiveCategory);
+  if (!mpSearchQuery && mpActiveSeries)   params.set('series_ticker', mpActiveSeries);
+  if (mpDaysMin > 0)                      params.set('min_days',      mpDaysMin);
+  if (mpDaysMax < 1500)                   params.set('max_days',      mpDaysMax);
+  if (mpSearchQuery)                      params.set('q',             mpSearchQuery);
+
   try {
     const resp = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data  = await resp.json();
     const mks   = data.markets || [];
     const pages = Math.max(1, Math.ceil((data.total || 0) / MP_PER_PAGE));
+
     body.innerHTML = '';
     if (!mks.length) {
       body.innerHTML = '<div style="padding:16px;font-size:10px;color:#222">No markets found.</div>';
@@ -2808,8 +2842,102 @@ async function mpFetchBrowseMarkets() {
     document.getElementById('mp-page-info').textContent = `Page ${mpCurrentPage} of ${pages}`;
     document.getElementById('mp-prev-btn').disabled = mpCurrentPage <= 1;
     document.getElementById('mp-next-btn').disabled = mpCurrentPage >= pages;
+
+    // When in search mode, rebuild the complete series list from ALL matching markets.
+    // This is decoupled from pagination — runs once per query, not per page.
+    if (mpSearchQuery) {
+      mpBuildSearchSeriesList(mpSearchQuery);
+    }
   } catch(e) {
     body.innerHTML = `<div style="padding:12px;font-size:10px;color:#555">Error: ${e.message}</div>`;
+  }
+}
+
+// Fetch ALL matching series for a search query (called once per new query, not per page)
+let _lastSearchForSeries = '';
+
+async function mpBuildSearchSeriesList(query) {
+  // Avoid redundant fetches if the query hasn't changed
+  if (query === _lastSearchForSeries) return;
+  _lastSearchForSeries = query;
+
+  // Fetch all matching markets with a large per_page to get every series ticker.
+  // We only need tickers/series_tickers — the full market data is fetched separately
+  // for the paginated display. 500 covers almost all realistic search result sets.
+  let allMarkets = [];
+  try {
+    const params = new URLSearchParams({ q: query, per_page: 500, page: 1,
+                                         min_price: 0, max_price: 100 });
+    // Scope series discovery to the active category — keeps results relevant
+    if (mpActiveCategory) params.set('category', mpActiveCategory);
+    const resp = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
+    if (resp.ok) {
+      const data = await resp.json();
+      allMarkets = data.markets || [];
+      // If there are more than 500, fetch remaining pages
+      const total = data.total || 0;
+      if (total > 500) {
+        const extraPages = Math.ceil((total - 500) / 500);
+        for (let p = 2; p <= Math.min(p + extraPages, 10); p++) {
+          params.set('page', p);
+          const r2 = await fetch(KALSHI_API + '/api/kalshi/markets?' + params);
+          if (r2.ok) {
+            const d2 = await r2.json();
+            allMarkets = allMarkets.concat(d2.markets || []);
+          }
+        }
+      }
+    }
+  } catch(e) {
+    console.warn('[mpBuildSearchSeriesList] fetch error:', e);
+  }
+
+  // Build ordered unique series map (preserves first-seen order)
+  const seriesSet = new Map();
+  for (const m of allMarkets) {
+    const st = m.series_ticker || m.event_ticker;
+    if (st && !seriesSet.has(st)) {
+      const fullSeries = mpSeriesMap && mpSeriesMap[st];
+      seriesSet.set(st, fullSeries || { ticker: st, title: st });
+    }
+  }
+
+  const col = document.getElementById('mp-series-list');
+  if (!col) return;
+
+  // Update header
+  const hdr = document.getElementById('mp-series-header');
+  const lbl = document.getElementById('mp-series-header-lbl');
+  if (hdr) hdr.textContent = 'Search results';
+  if (lbl) lbl.textContent = 'Search results';
+
+  col.innerHTML = '';
+  if (seriesSet.size === 0) {
+    col.innerHTML = '<div style="padding:12px;font-size:10px;color:#333">No series found</div>';
+    return;
+  }
+
+  for (const [ticker, s] of seriesSet) {
+    const row = document.createElement('div');
+    row.className = 'k-series-row';
+    row.dataset.ticker = ticker;
+    row.innerHTML = `<div class="k-series-title">${s.title || ticker}</div>
+      <div class="k-series-meta">${ticker}</div>`;
+    row.onclick = () => {
+      // Drill into this series — clear search, select series
+      mpActiveSeries = ticker;
+      mpSearchQuery  = '';
+      _lastSearchForSeries = '';
+      const input = document.getElementById('mp-search-input');
+      if (input) input.value = '';
+      const clearBtn = document.getElementById('mp-search-clear');
+      if (clearBtn) clearBtn.style.display = 'none';
+      mpCurrentPage = 1;
+      document.querySelectorAll('#mp-series-list .k-series-row').forEach(r => r.classList.remove('active'));
+      row.classList.add('active');
+      mpFetchBrowseMarkets();
+    };
+    col.appendChild(row);
   }
 }
 
@@ -2833,6 +2961,12 @@ function mpOnSearch() {
   if (clearBtn) clearBtn.style.display = mpSearchQuery ? '' : 'none';
   mpSearchDebounce = setTimeout(() => {
     mpCurrentPage = 1;
+    if (mpSearchQuery) {
+      // New search: clear series (search replaces drill-down) but KEEP category
+      // so search is scoped within the currently selected category.
+      mpActiveSeries = null;
+      document.querySelectorAll('#mp-series-list .k-series-row').forEach(r => r.classList.remove('active'));
+    }
     mpFetchBrowseMarkets();
   }, 300);
 }
@@ -2841,10 +2975,18 @@ function mpClearSearch() {
   const input = document.getElementById('mp-search-input');
   if (input) input.value = '';
   mpSearchQuery = '';
+  _lastSearchForSeries = '';
   const clearBtn = document.getElementById('mp-search-clear');
   if (clearBtn) clearBtn.style.display = 'none';
   mpCurrentPage = 1;
-  mpFetchBrowseMarkets();
+  // Restore series list to the active category view
+  if (mpActiveCategory) mpSelectCat(mpActiveCategory, null);
+  else {
+    const col = document.getElementById('mp-series-list');
+    if (col) col.innerHTML = '<div style="padding:16px;font-size:10px;color:#222">← Select a category</div>';
+    const body = document.getElementById('mp-market-body');
+    if (body) body.innerHTML = '<div style="padding:16px;font-size:10px;color:#222">← Select a series</div>';
+  }
 }
 
 function mpUpdatePriceRange() {

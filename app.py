@@ -248,6 +248,60 @@ def kalshi_series():
 
     return jsonify({'series': series, 'active_tickers': sorted(active_tickers)})
 
+
+# ── Location alias map — maps city names to Kalshi location codes ─────────────
+# Kalshi uses airport/weather-station codes in tickers (e.g. SATX = San Antonio TX).
+# This lets users search by city name and find the relevant markets.
+_LOCATION_ALIASES: dict = {
+    'san antonio':   ['satx'],
+    'new york':      ['nyc', 'jfk', 'lga', 'ewr'],
+    'los angeles':   ['lax', 'la'],
+    'chicago':       ['chi', 'ord', 'mdw'],
+    'houston':       ['hou', 'iah', 'hou'],
+    'phoenix':       ['phx'],
+    'philadelphia':  ['phl', 'phi'],
+    'san francisco': ['sfo', 'sf', 'sfom'],
+    'seattle':       ['sea'],
+    'denver':        ['den'],
+    'boston':        ['bos'],
+    'atlanta':       ['atl'],
+    'miami':         ['mia'],
+    'dallas':        ['dfw', 'dal'],
+    'minneapolis':   ['msp', 'min'],
+    'portland':      ['pdx'],
+    'las vegas':     ['las'],
+    'detroit':       ['dtw', 'det'],
+    'baltimore':     ['bwi', 'bal'],
+    'washington':    ['dca', 'iad', 'was'],
+    'new orleans':   ['msy', 'no'],
+    'salt lake':     ['slc'],
+    'kansas city':   ['mci', 'kci'],
+    'memphis':       ['mem'],
+    'nashville':     ['bna'],
+    'charlotte':     ['clt'],
+    'raleigh':       ['rdu'],
+    'indianapolis':  ['ind'],
+    'columbus':      ['cmh'],
+    'jacksonville':  ['jax'],
+    'austin':        ['aus'],
+    'fort worth':    ['dfw'],
+    'oklahoma city': ['okc'],
+    'el paso':       ['elp'],
+    'tucson':        ['tus'],
+    'albuquerque':   ['abq'],
+    'sacramento':    ['smf'],
+    'san jose':      ['sjc'],
+    'san diego':     ['san'],
+    'tampa':         ['tpa'],
+    'orlando':       ['mco', 'orl'],
+    'pittsburgh':    ['pit'],
+    'cincinnati':    ['cvg'],
+    'st louis':      ['stl'],
+    'cleveland':     ['cle'],
+    'milwaukee':     ['mke'],
+    'richmond':      ['ric'],
+}
+
 @app.route('/api/kalshi/markets')
 def kalshi_markets():
     """
@@ -277,12 +331,27 @@ def kalshi_markets():
 
     # Text search filter (applied after fetch, title + subtitle)
     if search_query:
-        markets = [
-            m for m in markets
-            if search_query in (m.get('title') or '').lower()
-            or search_query in (m.get('subtitle') or '').lower()
-            or search_query in (m.get('ticker') or '').lower()
-        ]
+        # Expand search terms using location aliases (e.g. "san antonio" → "satx")
+        search_terms = {search_query}
+        for city, codes in _LOCATION_ALIASES.items():
+            if city in search_query or search_query in city:
+                search_terms.update(codes)
+            else:
+                for code in codes:
+                    if code == search_query:
+                        search_terms.add(city)
+
+        def _matches(m):
+            fields = [
+                (m.get('title') or '').lower(),
+                (m.get('subtitle') or '').lower(),
+                (m.get('ticker') or '').lower(),
+                (m.get('series_ticker') or '').lower(),
+                (m.get('event_ticker') or '').lower(),
+            ]
+            return any(term in field for term in search_terms for field in fields)
+
+        markets = [m for m in markets if _matches(m)]
 
     total       = len(markets)
     total_pages = max(1, -(-total // per_page))
@@ -514,17 +583,30 @@ def kalshi_market_live(ticker):
         with urllib.request.urlopen(req, context=ssl_ctx, timeout=15) as resp:
             return _json.loads(resp.read().decode())
 
-    base = 'https://api.elections.kalshi.com/trade-api/v2'
+    # Try elections API first, fall back to trading API
+    BASES = [
+        'https://api.elections.kalshi.com/trade-api/v2',
+        'https://trading-api.kalshi.com/trade-api/v2',
+    ]
+    base   = BASES[0]
     result = {}
 
-    # Fetch market
-    try:
-        data = _get(f'{base}/markets/{ticker}')
-        result['market'] = data.get('market', data)
-    except urllib.error.HTTPError as e:
-        return jsonify({'error': f'Market not found: {e.code}'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 502
+    # Fetch market — try both API domains
+    mkt_data = None
+    for b in BASES:
+        try:
+            mkt_data = _get(f'{b}/markets/{ticker}')
+            base = b   # use whichever domain found the market for subsequent calls
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                continue   # try next domain
+            return jsonify({'error': f'Market fetch error: {e.code}'}), 502
+        except Exception as e:
+            return jsonify({'error': str(e)}), 502
+    if mkt_data is None:
+        return jsonify({'error': f'Market {ticker} not found on any Kalshi API domain'}), 404
+    result['market'] = mkt_data.get('market', mkt_data)
 
     # Fetch orderbook
     try:
@@ -538,13 +620,48 @@ def kalshi_market_live(ticker):
         from datetime import datetime, timezone, timedelta
         end_ts   = int(datetime.now(timezone.utc).timestamp())
         start_ts = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
-        series_ticker = (result['market'].get('series_ticker') or ticker.rsplit('-', 1)[0])
-        candles = _get(
+
+        # series_ticker from the market object is most reliable.
+        # Fallback: strip the last hyphen-segment (date/strike suffix).
+        # e.g. INXD-23DEC31-B5000 → rsplit gives INXD-23DEC31 which is wrong;
+        # the real series ticker is stored on the market object as series_ticker.
+        mkt_obj       = result['market']
+        series_ticker = (mkt_obj.get('series_ticker') or
+                         mkt_obj.get('event_ticker', '').rsplit('-', 1)[0] or
+                         ticker.rsplit('-', 1)[0])
+
+        candle_url = (
             f'{base}/series/{series_ticker}/markets/{ticker}/candlesticks'
             f'?start_ts={start_ts}&end_ts={end_ts}&period_interval=1440'
         )
-        result['candlesticks'] = candles.get('candlesticks', [])
-    except Exception:
+        try:
+            candle_resp = _get(candle_url)
+            result['candlesticks'] = candle_resp.get('candlesticks', [])
+        except Exception as ce:
+            # Log to Flask console so we can see the actual error
+            import traceback as _tb
+            print(f'[market_detail] Candlestick fetch failed for {ticker}: {ce}')
+            print(f'[market_detail] URL attempted: {candle_url}')
+            _tb.print_exc()
+            # Try alternate: some markets use event_ticker directly as series path
+            alt_series = mkt_obj.get('event_ticker', '')
+            if alt_series and alt_series != series_ticker:
+                try:
+                    alt_url = (
+                        f'{base}/series/{alt_series}/markets/{ticker}/candlesticks'
+                        f'?start_ts={start_ts}&end_ts={end_ts}&period_interval=1440'
+                    )
+                    candle_resp2 = _get(alt_url)
+                    result['candlesticks'] = candle_resp2.get('candlesticks', [])
+                    print(f'[market_detail] Alt candlestick URL succeeded: {alt_url}')
+                except Exception:
+                    result['candlesticks'] = []
+            else:
+                result['candlesticks'] = []
+    except Exception as e:
+        import traceback as _tb
+        print(f'[market_detail] Candlestick setup error for {ticker}: {e}')
+        _tb.print_exc()
         result['candlesticks'] = []
 
     # Fetch sibling markets in the same event (multi-outcome markets like "who will be X?")
@@ -745,6 +862,10 @@ def polymarket_match():
             'closed':      m.get('closed', False),
         })
 
+    # Filter out closed/resolved markets — active=true in the API query isn't
+    # always sufficient; the 'closed' field is the reliable signal.
+    scored = [m for m in scored if not m.get('closed')]
+
     scored.sort(key=lambda x: x['score'], reverse=True)
 
     return jsonify({
@@ -752,6 +873,185 @@ def polymarket_match():
         'query':   keywords,
         'kalshi_title': title,
     })
+
+
+
+# ── Manifold Markets comparison ───────────────────────────────────────────────
+@app.route('/api/manifold/match')
+def manifold_match():
+    """Fuzzy-match Kalshi ticker against Manifold Markets (no auth required)."""
+    import urllib.request, ssl, json as _json, re as _re
+    from kalshi_feed import _expand_tokens
+
+    ticker = (request.args.get('ticker') or '').upper()
+    if not ticker:
+        return jsonify({'error': 'ticker param required'}), 400
+
+    with kalshi_manager._lock:
+        mkt = next((m for m in kalshi_manager._markets
+                    if m.get('ticker', '').upper() == ticker), None)
+    if not mkt:
+        return jsonify({'error': f'Market {ticker} not found in cache'}), 404
+
+    title    = (mkt.get('title') or '').strip()
+    subtitle = (mkt.get('subtitle') or '').strip()
+    combined = f'{title} {subtitle}'.strip()
+    _STOP = {
+        'a','an','the','is','are','was','were','will','would','could','should',
+        'may','might','do','does','did','have','has','had','be','been','being',
+        'and','but','or','nor','for','yet','so','in','on','at','to','of','by',
+        'as','if','it','its','this','that','with','from','into','about','over',
+        'who','what','which','when','where','how','not','no','than','then',
+        'there','their','they','he','she','we','you','i','my','your','our',
+        'up','all','any','some','next','new','first','last','more','most',
+    }
+    words    = [w for w in _re.findall(r'[a-zA-Z]{3,}', combined.lower()) if w not in _STOP]
+    keywords = ' '.join(words[:4]) if words else title[:40]
+
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode    = ssl.CERT_NONE
+
+    def _get(url):
+        req = urllib.request.Request(url, headers={
+            'Accept': 'application/json', 'User-Agent': 'EventDashboard/1.6'})
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=15) as resp:
+            return _json.loads(resp.read().decode())
+
+    raw = []
+    try:
+        enc  = urllib.request.quote(keywords)
+        data = _get(f'https://api.manifold.markets/v0/search-markets?term={enc}&limit=25')
+        if isinstance(data, list):
+            raw = data
+    except Exception:
+        pass
+
+    if not raw:
+        return jsonify({'matches': [], 'query': keywords,
+                        'note': 'No Manifold results returned'})
+
+    kalshi_tok = _expand_tokens(combined)
+    scored = []
+    for m in raw:
+        if m.get('isResolved'):
+            continue
+        question = (m.get('question') or '').strip()
+        pm_tok   = _expand_tokens(question)
+        if not pm_tok or not kalshi_tok:
+            continue
+        fwd   = len(kalshi_tok & pm_tok) / len(kalshi_tok)
+        rev   = len(kalshi_tok & pm_tok) / len(pm_tok)
+        score = round((fwd + rev) / 2, 4)
+        if score < 0.05:
+            continue
+        prob      = m.get('probability')
+        yes_pct   = round(prob * 100) if prob is not None else None
+        close_ts  = m.get('closeTime')
+        try:
+            from datetime import datetime
+            close_str = datetime.fromtimestamp(close_ts / 1000).strftime('%b %d, %Y') if close_ts else None
+        except Exception:
+            close_str = None
+        scored.append({
+            'score':    score,
+            'question': question,
+            'url':      m.get('url') or f'https://manifold.markets/market/{m.get("id","")}',
+            'yes_pct':  yes_pct,
+            'volume':   round(float(m['volume']), 2) if m.get('volume') else None,
+            'end_date': close_str,
+        })
+
+    scored.sort(key=lambda x: x['score'], reverse=True)
+    return jsonify({'matches': scored[:5], 'query': keywords})
+
+
+# ── Metaculus comparison ──────────────────────────────────────────────────────
+@app.route('/api/metaculus/match')
+def metaculus_match():
+    """Fuzzy-match Kalshi ticker against Metaculus questions (no auth required)."""
+    import urllib.request, ssl, json as _json, re as _re
+    from kalshi_feed import _expand_tokens
+
+    ticker = (request.args.get('ticker') or '').upper()
+    if not ticker:
+        return jsonify({'error': 'ticker param required'}), 400
+
+    with kalshi_manager._lock:
+        mkt = next((m for m in kalshi_manager._markets
+                    if m.get('ticker', '').upper() == ticker), None)
+    if not mkt:
+        return jsonify({'error': f'Market {ticker} not found in cache'}), 404
+
+    title    = (mkt.get('title') or '').strip()
+    subtitle = (mkt.get('subtitle') or '').strip()
+    combined = f'{title} {subtitle}'.strip()
+    _STOP = {
+        'a','an','the','is','are','was','were','will','would','could','should',
+        'may','might','do','does','did','have','has','had','be','been','being',
+        'and','but','or','nor','for','yet','so','in','on','at','to','of','by',
+        'as','if','it','its','this','that','with','from','into','about','over',
+        'who','what','which','when','where','how','not','no','than','then',
+        'there','their','they','he','she','we','you','i','my','your','our',
+        'up','all','any','some','next','new','first','last','more','most',
+    }
+    words    = [w for w in _re.findall(r'[a-zA-Z]{3,}', combined.lower()) if w not in _STOP]
+    keywords = ' '.join(words[:4]) if words else title[:40]
+
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode    = ssl.CERT_NONE
+
+    def _get(url):
+        req = urllib.request.Request(url, headers={
+            'Accept': 'application/json', 'User-Agent': 'EventDashboard/1.6'})
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=15) as resp:
+            return _json.loads(resp.read().decode())
+
+    raw_results = []
+    try:
+        enc  = urllib.request.quote(keywords)
+        data = _get(f'https://www.metaculus.com/api2/questions/?search={enc}&limit=20&status=open&type=forecast')
+        raw_results = data.get('results', []) if isinstance(data, dict) else []
+    except Exception:
+        pass
+
+    if not raw_results:
+        return jsonify({'matches': [], 'query': keywords,
+                        'note': 'No Metaculus results returned'})
+
+    kalshi_tok = _expand_tokens(combined)
+    scored = []
+    for m in raw_results:
+        if m.get('resolution') not in (None, '', 'ambiguous'):
+            continue
+        title_q = (m.get('title') or '').strip()
+        pm_tok  = _expand_tokens(title_q)
+        if not pm_tok or not kalshi_tok:
+            continue
+        fwd   = len(kalshi_tok & pm_tok) / len(kalshi_tok)
+        rev   = len(kalshi_tok & pm_tok) / len(pm_tok)
+        score = round((fwd + rev) / 2, 4)
+        if score < 0.05:
+            continue
+        cp   = m.get('community_prediction') or {}
+        prob = cp.get('full', {}).get('q2') if isinstance(cp, dict) else None
+        close_time = m.get('scheduled_resolve_time') or m.get('close_time') or ''
+        close_str  = close_time[:10] if close_time else None
+        qid  = m.get('id', '')
+        scored.append({
+            'score':       score,
+            'question':    title_q,
+            'url':         m.get('page_url') or f'https://www.metaculus.com/questions/{qid}/',
+            'yes_pct':     round(prob * 100) if prob is not None else None,
+            'volume':      m.get('number_of_forecasters'),
+            'end_date':    close_str,
+        })
+
+    scored.sort(key=lambda x: x['score'], reverse=True)
+    return jsonify({'matches': scored[:5], 'query': keywords})
+
+
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

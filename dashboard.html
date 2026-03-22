@@ -57,15 +57,19 @@
       text-transform: uppercase;
     }
 
-    .title-bar-brand {
-      display: flex;
-      align-items: center;
-    }
     .title-bar-logo {
       height: 22px;
       width: auto;
       opacity: 0.85;
       display: block;
+    }
+    .title-bar-brand {
+      position: absolute;
+      right: 32px;
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      color: #888888;
     }
 
     .accent-line {
@@ -148,7 +152,7 @@
     .market-bar-row::-webkit-scrollbar { height: 2px; }
     .market-bar-row::-webkit-scrollbar-thumb { background: #222; }
 
-    /* Updated panel spans both rows */
+    /* Updated panel spans both rows — single vertical combined line */
     .market-updated {
       grid-column: 3;
       grid-row: 1 / 3;
@@ -157,28 +161,27 @@
       flex-direction: row;
       align-items: center;
       justify-content: center;
-      padding: 0 10px;
+      padding: 0;
       border-left: 1px solid #1a1a1a;
       min-width: 52px;
       background: #111;
-      gap: 4px;
     }
 
-    .market-updated-label {
-      font-size: 9px;
+    .market-updated-combined {
+      font-size: 8px;
       font-weight: 700;
-      letter-spacing: 0.25em;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
       color: #555;
-      white-space: nowrap;
       writing-mode: vertical-rl;
       transform: rotate(0deg);
-      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      user-select: none;
     }
 
-    .market-updated-time {
-      display: none;
-    }
+    /* Legacy — hidden, kept for JS compat */
+    .market-updated-label { display: none; }
+    .market-updated-time  { display: none; }
 
     .market-tile {
       flex: 1;
@@ -228,6 +231,16 @@
     .status-open    { color: #4aaa4a; background: rgba(30,100,30,0.20); border: 1px solid rgba(30,100,30,0.35); }
     .status-closed  { color: #888;    background: #141414;               border: 1px solid #2a2a2a; }
     .status-futures { color: #bb8844; background: rgba(120,90,30,0.20); border: 1px solid rgba(120,90,30,0.35); }
+    /* Sub-label shown under price when underlying market is closed */
+    .tile-closed-note {
+      font-size: 8px; font-weight: 600; letter-spacing: 0.10em;
+      text-transform: uppercase; color: #3a3a3a;
+      margin-top: 2px;
+    }
+    /* Dim the change/price row when underlying is closed (futures shown) */
+    .market-tile.underlying-closed .tile-change {
+      opacity: 0.55;
+    }
 
     .tile-price {
       font-size: 13px;
@@ -330,7 +343,7 @@
       pointer-events: none;
       box-shadow: 0 4px 14px rgba(0,0,0,0.7);
       width: max-content;
-      max-width: 280px;
+      max-width: 320px;
       white-space: normal;
     }
     .tile-tooltip::after {
@@ -983,18 +996,6 @@
     }
 
     .event-title { font-size: 13px; font-weight: 600; color: #dddddd; line-height: 1.4; flex: 1; }
-    .event-header-what  { font-size: 13px; font-weight: 600; color: #dddddd; line-height: 1.35; }
-    .event-header-meta  {
-      display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline;
-      margin-top: 3px;
-    }
-    .event-header-lbl   {
-      font-size: 8px; font-weight: 700; letter-spacing: 0.18em;
-      text-transform: uppercase; color: #555; margin-right: 1px;
-    }
-    .event-header-val   { font-size: 11px; color: #999; }
-    .event-header-val.unknown { color: #444; font-style: italic; }
-    .event-header-sep   { color: #333; font-size: 10px; }
 
     .event-sev {
       font-size: 9px; font-weight: 700;
@@ -1348,9 +1349,7 @@
     </nav>
     <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
       <button class="dash-pause-btn" id="dash-pause-btn" onclick="dashTogglePause()">⏸ Pause</button>
-      <div class="title-bar-brand">
-        <img src="/static/kltt-logo.png" alt="KLTT Holdings" class="title-bar-logo">
-      </div>
+      <img src="/static/kltt-logo.png" alt="KLTT Holdings" class="title-bar-logo">
     </div>
   </div>
   <div class="accent-line"></div>
@@ -1364,8 +1363,7 @@
     <div class="market-bar-row row1" id="market-bar-row1"></div>
     <div class="market-bar-row row2" id="market-bar-row2"></div>
     <div class="market-updated">
-      <div class="market-updated-label" id="market-updated-label">Updated</div>
-      <div class="market-updated-time" id="market-updated-time">—</div>
+      <div class="market-updated-combined" id="market-updated-time">Updated · —</div>
     </div>
   </div>
 
@@ -1772,14 +1770,20 @@ function renderTile(idx) {
   } else if (idx.always_open) {
     statusHTML = `<span class="tile-status status-open">24/7</span>`;
   } else if (idx.always_futures) {
-    statusHTML = `<span class="tile-status status-futures">Futures</span>`;
+    // always_futures can now be closed on weekends — show correct badge
+    statusHTML = isOpen
+      ? `<span class="tile-status status-futures">Futures</span>`
+      : `<span class="tile-status status-closed" title="CME Globex closed · Reopens Sun 18:00 ET">Closed</span>`;
   } else if (isOpen) {
     statusHTML = `<span class="tile-status status-open">Open</span>`;
   } else if (idx.futures) {
-    statusHTML = `<span class="tile-status status-futures">Futures</span>`;
+    statusHTML = `<span class="tile-status status-futures" title="Underlying market closed · Showing futures contract ${idx.futures.symbol || ''}">Futures</span>`;
   } else {
     statusHTML = `<span class="tile-status status-closed">Closed</span>`;
   }
+
+  // Whether the underlying exchange is currently closed (even if futures are shown)
+  const underlyingClosed = !isOpen && !idx.always_open;
 
   const displayPrice = (!isOpen && idx.futures) ? idx.futures.price     : idx.price;
   const displayDir   = (!isOpen && idx.futures) ? idx.futures.direction  : dir;
@@ -1818,8 +1822,20 @@ function renderTile(idx) {
     ? `<div class="tile-tooltip">${esc(idx.tooltip)}</div>`
     : '';
 
+  // Closed note: shown under price when market is closed
+  // For futures tiles: says "Underlying closed · futures live"
+  // For plain closed (no futures): says "Market closed"
+  let closedNoteHTML = '';
+  if (underlyingClosed) {
+    if (idx.futures) {
+      closedNoteHTML = `<div class="tile-closed-note">underlying closed · futures live</div>`;
+    } else if (!idx.always_futures) {
+      closedNoteHTML = `<div class="tile-closed-note">market closed</div>`;
+    }
+  }
+
   return `
-    <div class="market-tile ${displayDir}" id="${tileId}">
+    <div class="market-tile ${displayDir}${underlyingClosed ? ' underlying-closed' : ''}" id="${tileId}">
       ${tooltipHTML}
       <div style="width:100%">
         <div class="tile-top">
@@ -1828,6 +1844,7 @@ function renderTile(idx) {
         </div>
         <div class="tile-change ${displayDir}">${sign}${fmt(displayPct)}%</div>
         <div class="tile-price ${displayDir}">${sym}${fmt(displayPrice)}&ensp;<span style="font-size:10px;opacity:0.55">${sign}${fmt(displayChg)}</span></div>
+        ${closedNoteHTML}
       </div>
       <div style="width:100%">
         <div class="tile-meta">
@@ -1840,7 +1857,13 @@ function renderTile(idx) {
                <div class="tile-meta-item">L: <strong>${sym}${fmt(idx.day_low)}</strong></div>`
           }
         </div>
-        <div class="tile-sparkline-wrap">${renderSparkline(idx.sparkline || [], displayDir, idx.prev_close ?? null, document.getElementById("tile-" + idx.id + "-lbl"))}</div>
+        <div class="tile-sparkline-wrap">${
+          (idx.sparkline && idx.sparkline.length > 0)
+            ? renderSparkline(idx.sparkline, displayDir, idx.prev_close ?? null, document.getElementById("tile-" + idx.id + "-lbl"))
+            : underlyingClosed
+              ? '<div style="height:34px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#1e1e1e">— —</div>'
+              : '<div style="height:34px;"></div>'
+        }</div>
         ${countdownHTML}
       </div>
     </div>`;
@@ -1868,8 +1891,7 @@ async function fetchMarkets() {
     });
 
     if (d.last_updated) {
-      const lbl = document.getElementById('market-updated-label');
-      if (lbl) lbl.textContent = 'Updated · ' + relTime(d.last_updated);
+      document.getElementById('market-updated-time').textContent = 'Updated · ' + relTime(d.last_updated);
     }
   } catch(e) { console.warn('[Markets] error:', e); }
 }
@@ -1983,19 +2005,7 @@ function renderEvent(e) {
   return `<div class="event-item" data-severity="${e.severity}" data-keyword="${e.keyword||''}" data-strategy="${e.strategy||''}" onclick="toggleEventExpand(this)">
     <div class="event-sev-line sev-${e.severity}"></div>
     <div class="event-top">
-      <div class="event-title">
-        <div class="event-header-what">${esc(e.what || e.title)}</div>
-        <div class="event-header-meta">
-          <span class="event-header-lbl">[who]</span>
-          <span class="event-header-val${!e.who ? ' unknown' : ''}">${esc(e.who || 'unknown')}</span>
-          <span class="event-header-sep">·</span>
-          <span class="event-header-lbl">[where]</span>
-          <span class="event-header-val${!e.where ? ' unknown' : ''}">${esc(e.where || 'unknown')}</span>
-          <span class="event-header-sep">·</span>
-          <span class="event-header-lbl">[when]</span>
-          <span class="event-header-val">${relTime(e.detected_at)}</span>
-        </div>
-      </div>
+      <div class="event-title">${esc(e.title)}</div>
       <div class="event-sev sev-badge-${e.severity}">${e.severity}</div>
       ${e.status === 'breaking'   ? '<span class="evt-status-badge evt-status-breaking">🔴 NEW</span>'    : ''}
       ${e.status === 'developing' ? '<span class="evt-status-badge evt-status-developing">🟡 Developing</span>' : ''}
@@ -2299,7 +2309,7 @@ function spikeToggleCollapse() {
 }
 
 // ── Accounts bar ─────────────────────────────────────────────────────────────
-let acctCollapsed = true;
+let acctCollapsed  = true;
 let acctHandles   = [];
 
 async function acctLoadAccounts() {
@@ -3361,44 +3371,90 @@ document.addEventListener('keydown', e => {
 
 </script>
 
-  <!-- ── Loading overlay — full version with step indicators + live progress ── -->
+  <!-- ── Loading overlay (shown while Kalshi markets are still fetching) ── -->
   <div id="loading-overlay" style="display:none;position:fixed;inset:0;z-index:9999;
        background:rgba(8,8,8,0.96);backdrop-filter:blur(4px);
        flex-direction:column;align-items:center;justify-content:center;gap:20px;">
+
+    <!-- Spinner -->
     <div style="width:44px;height:44px;border:2px solid #1a1a1a;border-top-color:#4477dd;
-                border-radius:50%;animation:ov-spin 1s linear infinite;flex-shrink:0;"></div>
-    <div style="text-align:center;min-width:280px;max-width:360px;">
-      <div id="overlay-phase" style="font-size:12px;font-weight:700;letter-spacing:0.16em;
-           text-transform:uppercase;color:#4477dd;margin-bottom:6px;">Initializing</div>
-      <div id="overlay-status" style="font-size:11px;color:#555;letter-spacing:0.04em;
-           min-height:16px;">Starting up…</div>
-      <div id="overlay-hint" style="font-size:10px;color:#333;margin-top:4px;
-           min-height:14px;"></div>
+                border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0;"></div>
+
+    <!-- Main text block -->
+    <div style="text-align:center;max-width:340px;">
+      <div style="font-size:12px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;
+                  color:#4477dd;margin-bottom:10px;">Loading Event Dashboard</div>
+
+      <div id="overlay-phase" style="font-size:11px;font-weight:700;letter-spacing:0.1em;
+           text-transform:uppercase;color:#666;margin-bottom:6px;">
+        Initializing…
+      </div>
+
+      <div id="overlay-status" style="font-size:11px;color:#444;letter-spacing:0.04em;
+           margin-bottom:10px;">
+        Starting up…
+      </div>
+
+      <!-- Progress bar -->
+      <div style="width:240px;height:2px;background:#1a1a1a;border-radius:2px;
+                  overflow:hidden;margin:0 auto 12px;">
+        <div id="overlay-bar" style="height:100%;background:#4477dd;border-radius:2px;
+             width:0%;transition:width 0.6s ease;"></div>
+      </div>
+
+      <!-- Elapsed time + hint -->
+      <div style="display:flex;align-items:center;justify-content:center;gap:16px;">
+        <div id="overlay-elapsed" style="font-size:10px;color:#2a2a2a;
+             font-variant-numeric:tabular-nums;letter-spacing:0.06em;">
+          0s elapsed
+        </div>
+        <div style="width:1px;height:10px;background:#1a1a1a;"></div>
+        <div id="overlay-hint" style="font-size:10px;color:#2a2a2a;letter-spacing:0.04em;">
+          Cold start takes 30–60s
+        </div>
+      </div>
     </div>
-    <div style="width:280px;height:2px;background:#1a1a1a;border-radius:1px;overflow:hidden;">
-      <div id="overlay-bar" style="height:100%;width:0%;background:#4477dd;
-           transition:width 0.6s ease;border-radius:1px;"></div>
+
+    <!-- Step list -->
+    <div id="overlay-steps" style="display:flex;flex-direction:column;gap:5px;
+         min-width:220px;margin-top:4px;">
+      <div class="ov-step" id="step-server">
+        <span class="ov-dot" id="dot-server">○</span>
+        <span class="ov-label">Flask server</span>
+      </div>
+      <div class="ov-step" id="step-kalshi">
+        <span class="ov-dot" id="dot-kalshi">○</span>
+        <span class="ov-label">Kalshi API fetch</span>
+      </div>
+      <div class="ov-step" id="step-index">
+        <span class="ov-dot" id="dot-index">○</span>
+        <span class="ov-label">Market indexing &amp; scoring</span>
+      </div>
+      <div class="ov-step" id="step-ready">
+        <span class="ov-dot" id="dot-ready">○</span>
+        <span class="ov-label">Dashboard ready</span>
+      </div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:5px;min-width:180px;">
-      <div class="ov-step done"    id="step-server">  <span class="ov-dot" id="dot-server">&#10003;</span>  <span class="ov-label">Flask server</span></div>
-      <div class="ov-step pending" id="step-bluesky"> <span class="ov-dot" id="dot-bluesky">&#9675;</span> <span class="ov-label">Bluesky feed</span></div>
-      <div class="ov-step pending" id="step-kalshi">  <span class="ov-dot" id="dot-kalshi">&#9675;</span>  <span class="ov-label">Kalshi markets</span></div>
-      <div class="ov-step pending" id="step-index">   <span class="ov-dot" id="dot-index">&#9675;</span>   <span class="ov-label">Market indexing</span></div>
-      <div class="ov-step pending" id="step-ready">   <span class="ov-dot" id="dot-ready">&#9675;</span>   <span class="ov-label">Ready</span></div>
-    </div>
-    <div id="overlay-elapsed" style="font-size:9px;color:#2a2a2a;letter-spacing:0.1em;">0s elapsed</div>
   </div>
+
   <style>
-    @keyframes ov-spin  { to { transform: rotate(360deg); } }
-    @keyframes ov-pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-    .ov-step  { display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:0.1em;text-transform:uppercase; }
-    .ov-dot   { font-size:10px;width:12px;text-align:center; }
-    .ov-label { color:#2a2a2a; }
-    .ov-step.done .ov-dot    { color:#4a9a4a; }
-    .ov-step.done .ov-label  { color:#3a5a3a; }
-    .ov-step.active .ov-dot  { color:#4477dd; animation:ov-pulse 1.2s infinite; }
-    .ov-step.active .ov-label { color:#4477dd; }
+    @keyframes spin    { to { transform: rotate(360deg); } }
+    @keyframes ov-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    .ov-step {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 10px; letter-spacing: 0.08em; color: #2a2a2a;
+    }
+    .ov-dot  { font-size: 10px; width: 12px; text-align: center; }
+    .ov-label { color: #2a2a2a; }
+    .ov-step.done .ov-dot   { color: #4a9a4a; }
+    .ov-step.done .ov-label { color: #3a5a3a; }
+    .ov-step.active .ov-dot {
+      color: #4477dd;
+      animation: ov-pulse 1.2s infinite;
+    }
+    .ov-step.active .ov-label { color: #4477dd; }
   </style>
+
   <script>
   (function() {
     var THRESHOLD = 1000;
@@ -3408,6 +3464,7 @@ document.addEventListener('keydown', e => {
     var pollTimer = null;
     var shown     = false;
     var resolvedImmediately = false;
+    var prevCount = -1;
 
     function el(id) { return document.getElementById(id); }
 
@@ -3445,47 +3502,49 @@ document.addEventListener('keydown', e => {
             shown = true;
           }
 
-          setStep('server',  'done');
-          setStep('bluesky', 'done');
+          setStep('server', 'done');
 
           if (status === 'fetching') {
             setStep('kalshi', 'active');
-            setStep('index',  'pending');
-            if (el('overlay-phase'))  el('overlay-phase').textContent  = 'Fetching from Kalshi API';
+            setStep('index', 'pending');
+            if (el('overlay-phase')) el('overlay-phase').textContent = 'Fetching from Kalshi API';
             var pages   = d.fetch_pages   || 0;
             var running = d.fetch_running || 0;
-            var pageStr = pages > 0 ? 'Page ' + pages + ' of ~35 fetched' : 'Connecting to Kalshi API…';
+            var pageStr = pages > 0 ? 'Page ' + pages + ' fetched' : 'Connecting to Kalshi API…';
             var mktStr  = running > 0 ? ' · ' + running.toLocaleString() + ' markets so far' : '';
             if (el('overlay-status')) el('overlay-status').textContent = pageStr + mktStr;
-            if (el('overlay-hint'))   el('overlay-hint').textContent   = '~35 pages · ~35k markets total · usually 30–60s';
-            var fetchPct = pages > 0 ? Math.min(58, 10 + (pages / 35) * 48) : Math.min(12, 8 + elapsed / 1000);
+            if (el('overlay-hint'))   el('overlay-hint').textContent   = 'Fetching open markets — this may take several minutes';
+            var fetchPct = pages > 0 ? Math.min(75, 10 + Math.log(pages + 1) * 14) : Math.min(12, 8 + elapsed / 1000);
             updateBar(fetchPct);
 
           } else if (count > 0 && count < THRESHOLD) {
             setStep('kalshi', 'done');
-            setStep('index',  'active');
-            if (el('overlay-phase'))  el('overlay-phase').textContent  = 'Indexing markets';
-            if (el('overlay-status')) el('overlay-status').textContent = count.toLocaleString() + ' markets loaded — indexing tokens…';
+            setStep('index', 'active');
+            if (el('overlay-phase')) el('overlay-phase').textContent = 'Indexing markets';
+            if (el('overlay-status')) el('overlay-status').textContent =
+              count.toLocaleString() + ' markets loaded — indexing tokens…';
             updateBar(70 + (count / THRESHOLD) * 25);
 
           } else if (count === 0) {
+            setStep('server', 'done');
             setStep('kalshi', 'active');
-            if (el('overlay-phase'))  el('overlay-phase').textContent  = status !== 'fetching' ? 'Server starting up' : 'Fetching from Kalshi API';
-            if (el('overlay-status')) el('overlay-status').textContent = 'Connecting to Kalshi API…';
-            updateBar(Math.min(55, 8 + elapsed / 800));
+            if (el('overlay-phase')) el('overlay-phase').textContent =
+              status === 'fetching' ? 'Fetching from Kalshi API' : 'Server starting up';
+            if (el('overlay-status')) el('overlay-status').textContent =
+              status === 'fetching' ? 'Connecting to Kalshi API…' : 'Waiting for Kalshi feed manager…';
+            updateBar(Math.min(12, 5 + elapsed / 800));
           }
 
           if (count >= THRESHOLD) {
             resolvedImmediately = !shown;
             clearInterval(pollTimer);
             setStep('kalshi', 'done');
-            setStep('index',  'done');
-            setStep('ready',  'done');
+            setStep('index', 'done');
+            setStep('ready', 'done');
             if (el('overlay-phase'))  el('overlay-phase').textContent  = 'Ready';
             if (el('overlay-status')) el('overlay-status').textContent = count.toLocaleString() + ' markets loaded';
             if (el('overlay-hint'))   el('overlay-hint').textContent   = '';
             updateBar(100);
-
             setTimeout(function() {
               if (overlay) overlay.style.display = 'none';
               if (shown) {

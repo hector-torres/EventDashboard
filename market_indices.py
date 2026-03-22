@@ -39,7 +39,7 @@ INDICES_CONFIG = [
         'close_time':  dtime(16, 0),
         'market_days': [0, 1, 2, 3, 4],
         'row':         1,
-        'tooltip':     'NYSE/NASDAQ · Mon–Fri 9:30–16:00 ET · After-hours futures via ES=F (CME Globex, ~23h/day)',
+        'tooltip':     'NYSE/NASDAQ · Mon–Fri 9:30–16:00 ET · After-hours futures via ES=F · CME Globex: Sun 18:00 – Fri 17:00 ET',
     },
     {
         'id':          'nasdaq',
@@ -52,7 +52,7 @@ INDICES_CONFIG = [
         'close_time':  dtime(16, 0),
         'market_days': [0, 1, 2, 3, 4],
         'row':         1,
-        'tooltip':     'NASDAQ · Mon–Fri 9:30–16:00 ET · After-hours futures via NQ=F (CME Globex, ~23h/day)',
+        'tooltip':     'NASDAQ · Mon–Fri 9:30–16:00 ET · After-hours futures via NQ=F · CME Globex: Sun 18:00 – Fri 17:00 ET',
     },
     {
         'id':          'dow',
@@ -65,7 +65,7 @@ INDICES_CONFIG = [
         'close_time':  dtime(16, 0),
         'market_days': [0, 1, 2, 3, 4],
         'row':         1,
-        'tooltip':     'NYSE · Mon–Fri 9:30–16:00 ET · After-hours futures via YM=F (Mini Dow, CME Globex)',
+        'tooltip':     'NYSE · Mon–Fri 9:30–16:00 ET · After-hours futures via YM=F · CME Globex: Sun 18:00 – Fri 17:00 ET',
     },
     {
         'id':          'dax',
@@ -216,6 +216,51 @@ class MarketIndicesManager:
         t = now.time().replace(second=0, microsecond=0)
         return cfg['open_time'] <= t < cfg['close_time']
 
+    def _is_cme_globex_open(self) -> bool:
+        """CME Globex (futures) trades ~23h/day but closes for the weekend:
+        Friday 17:00 ET → Sunday 18:00 ET (US Eastern time).
+        Returns True if currently within the open session.
+        """
+        et   = pytz.timezone('America/New_York')
+        now  = datetime.now(et)
+        dow  = now.weekday()   # 0=Mon … 4=Fri, 5=Sat, 6=Sun
+        t    = now.time().replace(second=0, microsecond=0)
+        from datetime import time as dtime
+        CLOSE_T  = dtime(17, 0)   # Friday close
+        REOPEN_T = dtime(18, 0)   # Sunday reopen
+
+        if dow == 5:               # Saturday — always closed
+            return False
+        if dow == 4 and t >= CLOSE_T:   # Friday after 17:00 — closed
+            return False
+        if dow == 6 and t < REOPEN_T:   # Sunday before 18:00 — closed
+            return False
+        return True
+
+    def _cme_globex_next_open(self) -> Optional[Dict]:
+        """Return seconds + label until CME Globex reopens (Sunday 18:00 ET)."""
+        from datetime import timedelta
+        et   = pytz.timezone('America/New_York')
+        now  = datetime.now(et)
+        dow  = now.weekday()
+        # Walk forward to next Sunday 18:00 ET
+        days_ahead = (6 - dow) % 7   # days until Sunday
+        if days_ahead == 0:
+            # It's Sunday — reopen is today at 18:00 if still before, else next Sunday
+            from datetime import time as dtime
+            candidate = now.replace(hour=18, minute=0, second=0, microsecond=0)
+            if now >= candidate:
+                days_ahead = 7
+        if days_ahead == 0:
+            candidate = now.replace(hour=18, minute=0, second=0, microsecond=0)
+        else:
+            candidate = (now + timedelta(days=days_ahead)).replace(
+                hour=18, minute=0, second=0, microsecond=0
+            )
+        secs  = max(0, int((candidate - now).total_seconds()))
+        tz_abbr = now.strftime('%Z')
+        return {'label': f'Sun 18:00 {tz_abbr}', 'seconds': secs}
+
     def _time_to_close(self, cfg: Dict) -> Optional[Dict]:
         """Return timing info until market close, or None if market is closed."""
         if not self._is_market_open(cfg):
@@ -336,7 +381,9 @@ class MarketIndicesManager:
             'next_open':      None,
             'futures':        None,
             'fetched_at':     gas.get('last_updated', ''),
-            'sparkline':      [],
+            # Build a simple trend sparkline from available AAA data points.
+            # month_ago → week_ago → yesterday → current gives a useful price trend.
+            'sparkline':      [v for v in [month_ago, week_ago, yesterday, current] if v is not None],
             'sparkline_open_frac': None,
             'aaa_as_of':      as_of,
             'aaa_source':     True,
@@ -367,11 +414,22 @@ class MarketIndicesManager:
         change_pct = (change / prev_close * 100) if prev_close else 0
         direction  = 'up' if change >= 0 else 'down'
 
-        # Fetch 1-day intraday history for sparkline (5-min bars)
+        # Fetch sparkline history (5-min bars).
+        # Try today's session first; if empty (weekend/holiday) fall back to
+        # the last 5 days and slice out only the most recent trading day's bars.
         sparkline = []
         sparkline_open_frac = None   # 0.0–1.0: where "market open" falls on x-axis
         try:
             hist = ticker.history(period='1d', interval='5m')
+            if hist.empty:
+                # Market closed today — grab last 5 days and keep the most recent day
+                hist5 = ticker.history(period='5d', interval='5m')
+                if not hist5.empty:
+                    # Group by date and take the last date's bars
+                    import pandas as pd
+                    hist5.index = pd.to_datetime(hist5.index, utc=True)
+                    last_date = hist5.index.normalize().max()
+                    hist = hist5[hist5.index.normalize() == last_date]
             if not hist.empty:
                 closes = hist['Close'].dropna()
                 timestamps = closes.index.tolist()
@@ -422,13 +480,22 @@ class MarketIndicesManager:
         except Exception as e:
             pass
 
-        # Fetch futures if market is closed
+        # Fetch futures if market is closed — but only if CME Globex is open.
+        # On weekends (Fri 17:00 → Sun 18:00 ET) Globex is closed and Yahoo
+        # returns Friday's settlement (change=0, price=prev_close) which is stale.
         futures_data = None
         if not is_open and cfg.get('futures'):
-            futures_data = self._fetch_futures(cfg['futures'], currency)
+            if self._is_cme_globex_open():
+                futures_data = self._fetch_futures(cfg['futures'], currency)
 
         time_to_close = self._time_to_close(cfg) if is_open else None
-        next_open     = self._next_open(cfg) if not is_open else None
+        # For always_futures markets, compute open based on CME Globex hours
+        if cfg.get('always_futures'):
+            globex_open = self._is_cme_globex_open()
+            is_open     = globex_open   # override is_open for always_futures tiles
+            next_open   = None if globex_open else self._cme_globex_next_open()
+        else:
+            next_open   = self._next_open(cfg) if not is_open else None
 
         return {
             'id':           cfg['id'],
@@ -451,7 +518,9 @@ class MarketIndicesManager:
             'always_open':    always_open,
             'hide_countdown': hide_countdown,
             'time_to_close': None if hide_countdown else time_to_close,
-            'next_open':     None if hide_countdown else next_open,
+            # For always_futures: always show next_open when closed — even if hide_countdown
+            # is set (which was correct when they were "always open", but not now they can close)
+            'next_open':     next_open if cfg.get('always_futures') else (None if hide_countdown else next_open),
             'futures':      futures_data,
             'fetched_at':   datetime.now(timezone.utc).isoformat(),
             'sparkline':      sparkline,

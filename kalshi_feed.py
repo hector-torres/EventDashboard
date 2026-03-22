@@ -16,6 +16,7 @@ Matching engine (pure stdlib, no external NLP dependencies):
 
 import json
 import os
+import sqlite3
 import re
 import time
 import threading
@@ -44,6 +45,8 @@ _BLOCKED_SERIES_PREFIXES: Tuple[str, ...] = (
     'KXMVE',      # cross-category & multi-outcome parlays (546k markets alone)
 )
 DATA_DIR           = 'data'
+DB_FILE            = os.path.join(DATA_DIR, 'kalshi.db')
+# Legacy JSON paths — kept only for one-time migration on first startup
 CACHE_FILE         = os.path.join(DATA_DIR, 'kalshi_markets.json')
 SERIES_CACHE_FILE  = os.path.join(DATA_DIR, 'kalshi_series.json')
 DEBUG_FILE         = os.path.join(DATA_DIR, 'kalshi_sample.json')
@@ -358,8 +361,220 @@ def _current_hour_utc() -> datetime:
     return now.replace(minute=0, second=0, microsecond=0)
 
 
+# ── SQLite persistence ───────────────────────────────────────────────────────
+
+def _db_connect() -> sqlite3.Connection:
+    """Open a connection to the SQLite database (creates tables on first call)."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    con = sqlite3.connect(DB_FILE, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    con.execute('PRAGMA journal_mode=WAL')   # safe concurrent reads
+    con.execute('PRAGMA synchronous=NORMAL') # fast writes, safe on crash
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS markets (
+            ticker          TEXT PRIMARY KEY,
+            series_ticker   TEXT,
+            event_ticker    TEXT,
+            title           TEXT,
+            subtitle        TEXT,
+            category        TEXT,
+            yes_price_cents REAL,
+            close_ts        REAL,
+            data            TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_markets_series   ON markets(series_ticker);
+        CREATE INDEX IF NOT EXISTS idx_markets_event    ON markets(event_ticker);
+        CREATE INDEX IF NOT EXISTS idx_markets_category ON markets(category);
+        CREATE INDEX IF NOT EXISTS idx_markets_price    ON markets(yes_price_cents);
+        CREATE INDEX IF NOT EXISTS idx_markets_close    ON markets(close_ts);
+
+        CREATE TABLE IF NOT EXISTS series (
+            ticker   TEXT PRIMARY KEY,
+            category TEXT,
+            data     TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_series_category ON series(category);
+
+        CREATE TABLE IF NOT EXISTS meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        );
+    """)
+    return con
+
+
+def _db_is_fresh() -> bool:
+    """True if the DB was written within the current UTC hour."""
+    if not os.path.exists(DB_FILE):
+        return False
+    try:
+        with _db_connect() as con:
+            row = con.execute("SELECT value FROM meta WHERE key='last_updated'").fetchone()
+        if not row:
+            return False
+        ts = datetime.fromisoformat(row['value'])
+        return ts >= _current_hour_utc()
+    except Exception:
+        return False
+
+
+def _db_load_markets() -> Optional[List[Dict]]:
+    """Load all market dicts from SQLite. Returns None on error."""
+    if not os.path.exists(DB_FILE):
+        return None
+    try:
+        with _db_connect() as con:
+            rows = con.execute("SELECT data FROM markets").fetchall()
+        return [json.loads(r['data']) for r in rows]
+    except Exception as e:
+        logger.warning(f'[Kalshi] DB load error: {e}')
+        return None
+
+
+def _db_load_series() -> Optional[List[Dict]]:
+    """Load all series dicts from SQLite. Returns None on error."""
+    if not os.path.exists(DB_FILE):
+        return None
+    try:
+        with _db_connect() as con:
+            rows = con.execute("SELECT data FROM series").fetchall()
+        return [json.loads(r['data']) for r in rows] or None
+    except Exception as e:
+        logger.warning(f'[Kalshi] DB series load error: {e}')
+        return None
+
+
+def _db_save_markets(markets: List[Dict], last_updated: str) -> None:
+    """Upsert all markets and update last_updated timestamp. No history stored."""
+    def _yes_price_cents(m: Dict) -> Optional[float]:
+        for field in ('yes_ask', 'last_price', 'yes_ask_dollars', 'last_price_dollars'):
+            raw = m.get(field)
+            if raw is not None:
+                try:
+                    v = float(raw)
+                    if v > 0:
+                        return v * 100 if 0 < v <= 1.0 else v
+                except (TypeError, ValueError):
+                    pass
+        return None
+
+    def _close_ts(m: Dict) -> Optional[float]:
+        raw = m.get('close_time') or m.get('expiration_time')
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw.replace('Z', '+00:00')).timestamp()
+        except Exception:
+            return None
+
+    rows = []
+    for m in markets:
+        clean = {k: v for k, v in m.items() if k != '_tok'}
+        rows.append((
+            m.get('ticker', ''),
+            m.get('series_ticker') or '',
+            m.get('event_ticker') or '',
+            m.get('title') or '',
+            m.get('subtitle') or '',
+            m.get('category') or '',
+            _yes_price_cents(m),
+            _close_ts(m),
+            json.dumps(clean),
+        ))
+
+    try:
+        with _db_connect() as con:
+            # Wipe and replace — current-state only, no history
+            con.execute("DELETE FROM markets")
+            con.executemany(
+                """INSERT OR REPLACE INTO markets
+                   (ticker, series_ticker, event_ticker, title, subtitle,
+                    category, yes_price_cents, close_ts, data)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                rows
+            )
+            con.execute(
+                "INSERT OR REPLACE INTO meta(key,value) VALUES('last_updated',?)",
+                (last_updated,)
+            )
+        logger.info(f'[Kalshi] DB saved: {len(markets)} markets.')
+    except Exception as e:
+        logger.error(f'[Kalshi] DB save error: {e}')
+
+
+def _db_save_series(series_list: List[Dict]) -> None:
+    """Upsert all series into the DB."""
+    rows = [
+        (s.get('ticker', ''), s.get('category', ''), json.dumps(s))
+        for s in series_list if s.get('ticker')
+    ]
+    try:
+        with _db_connect() as con:
+            con.execute("DELETE FROM series")
+            con.executemany(
+                "INSERT OR REPLACE INTO series(ticker, category, data) VALUES (?,?,?)",
+                rows
+            )
+    except Exception as e:
+        logger.error(f'[Kalshi] DB series save error: {e}')
+
+
+def _db_filter_markets(
+    category:      Optional[str]  = None,
+    series_ticker: Optional[str]  = None,
+    event_ticker:  Optional[str]  = None,
+    min_price:     float          = 0,
+    max_price:     float          = 100,
+    max_days:      Optional[float] = None,
+    min_days:      Optional[float] = None,
+) -> List[Dict]:
+    """Query SQLite directly — much faster than scanning self._markets in RAM."""
+    now_ts = datetime.now(timezone.utc).timestamp()
+    clauses = []
+    params  = []
+
+    if category:
+        clauses.append("LOWER(category) = LOWER(?)")
+        params.append(category)
+    if series_ticker:
+        clauses.append("UPPER(series_ticker) = UPPER(?)")
+        params.append(series_ticker)
+    if event_ticker:
+        clauses.append("UPPER(event_ticker) = UPPER(?)")
+        params.append(event_ticker)
+
+    # Price: allow nulls through when min_price=0 (markets with no price yet)
+    if min_price > 0:
+        clauses.append("yes_price_cents >= ?")
+        params.append(min_price)
+    if max_price < 100:
+        clauses.append("yes_price_cents <= ?")
+        params.append(max_price)
+
+    # Days remaining
+    if min_days is not None:
+        clauses.append("(close_ts IS NULL OR close_ts >= ?)")
+        params.append(now_ts + min_days * 86400)
+    if max_days is not None:
+        clauses.append("(close_ts IS NULL OR close_ts <= ?)")
+        params.append(now_ts + max_days * 86400)
+
+    sql = "SELECT data FROM markets"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+
+    try:
+        with _db_connect() as con:
+            rows = con.execute(sql, params).fetchall()
+        return [json.loads(r['data']) for r in rows]
+    except Exception as e:
+        logger.error(f'[Kalshi] DB filter error: {e}')
+        return []
+
+
+# Legacy JSON helpers — used only for one-time migration on first run
 def _cache_is_fresh(path: str) -> bool:
-    """True if the cache file was written within the current UTC hour."""
+    """Check JSON file freshness — legacy, used only if DB absent."""
     if not os.path.exists(path):
         return False
     mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
@@ -375,9 +590,9 @@ def _load_cache(path: str) -> Optional[List[Dict]]:
 
 
 def _save_cache(path: str, data) -> None:
+    """Legacy JSON save — kept for debug files only."""
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(path, 'w') as f:
-        # Strip computed _tok frozensets — they are rebuilt on load
         if isinstance(data, list):
             clean = [{k: v for k, v in m.items() if k != '_tok'} for m in data]
         else:
@@ -577,96 +792,51 @@ class KalshiFeedManager:
         self._fetch_pages   = 0   # pages fetched so far this pull
         self._fetch_running = 0   # markets accumulated so far this pull
 
-        # Bootstrap: try cache first, pull immediately if stale
-        if _cache_is_fresh(CACHE_FILE):
-            cached = _load_cache(CACHE_FILE)
-            if cached is not None:
-                series_cached = _load_cache(SERIES_CACHE_FILE)
+        # Bootstrap: try SQLite DB first; fall back to legacy JSON on first run
+        if _db_is_fresh():
+            cached        = _db_load_markets()
+            series_cached = _db_load_series()
+        else:
+            # DB absent/stale — try legacy JSON for a one-time migration
+            cached        = _load_cache(CACHE_FILE) if _cache_is_fresh(CACHE_FILE) else None
+            series_cached = _load_cache(SERIES_CACHE_FILE) if cached else None
 
+        if cached:
+            series_cached = series_cached or []
+            cat_map      = {s.get('ticker',''): s.get('category','') for s in series_cached if s.get('ticker')}
+            prefix_index = _build_series_prefix_index(list(cat_map.keys()))
+            for m in cached:
+                if not m.get('series_ticker'):
+                    et = m.get('event_ticker', '')
+                    if et and prefix_index:
+                        st = _resolve_series_ticker(et, prefix_index)
+                        m['series_ticker'] = st
+                        if not m.get('category') and st in cat_map:
+                            m['category'] = cat_map[st]
+                elif not m.get('category'):
+                    st = m.get('series_ticker', '')
+                    if st in cat_map:
+                        m['category'] = cat_map[st]
+                _index_market_tokens(m)
+
+            self._markets     = cached
+            self._series      = series_cached
+            self._cat_map     = cat_map
+            self.last_updated = datetime.now(timezone.utc).isoformat()
+            self.status       = 'ok'
+            logger.info(f'[Kalshi] Loaded {len(cached)} markets + {len(series_cached)} series from DB.')
+
+            # If we loaded from legacy JSON, persist to SQLite immediately
+            if not _db_is_fresh() and cached:
+                logger.info('[Kalshi] Migrating legacy JSON cache to SQLite…')
+                _db_save_markets(cached, self.last_updated)
                 if series_cached:
-                    # Both caches fresh — stamp series_ticker + category and start
-                    # Prune blocked parlay series from cache
-                    before = len(cached)
-                    cached = [m for m in cached if not any(
-                        (m.get('series_ticker') or m.get('event_ticker') or m.get('ticker') or '').upper().startswith(pfx)
-                        for pfx in _BLOCKED_SERIES_PREFIXES
-                    )]
-                    if len(cached) < before:
-                        logger.info(f'[Kalshi] Pruned {before - len(cached):,} blocked-series markets from cache.')
-                    cat_map      = {s.get('ticker',''): s.get('category','') for s in series_cached if s.get('ticker')}
-                    prefix_index = _build_series_prefix_index(list(cat_map.keys()))
-                    for m in cached:
-                        if not m.get('series_ticker'):
-                            et = m.get('event_ticker', '')
-                            if et:
-                                st = _resolve_series_ticker(et, prefix_index)
-                                m['series_ticker'] = st
-                                if not m.get('category') and st in cat_map:
-                                    m['category'] = cat_map[st]
-                        elif not m.get('category'):
-                            st = m.get('series_ticker', '')
-                            if st in cat_map:
-                                m['category'] = cat_map[st]
+                    _db_save_series(series_cached)
 
-                    # Pre-index tokens for fast semantic scoring
-                    for m in cached:
-                        _index_market_tokens(m)
+            self._start_hourly_thread(pull_now=False)
+            return
 
-                    self._markets     = cached
-                    self._series      = series_cached
-                    self._cat_map     = cat_map
-                    self.last_updated = datetime.fromtimestamp(
-                        os.path.getmtime(CACHE_FILE), tz=timezone.utc
-                    ).isoformat()
-                    self.status = 'ok'
-                    logger.info(f'[Kalshi] Loaded {len(cached)} markets + {len(series_cached)} series from cache.')
-                    self._start_hourly_thread(pull_now=False)
-                    return
-                else:
-                    # Markets cached but no series yet — serve markets immediately,
-                    # fetch series in background to stamp categories.
-                    logger.info('[Kalshi] Market cache found but no series cache — fetching series now.')
-                    # Prune blocked parlay series from cache
-                    before = len(cached)
-                    cached = [m for m in cached if not any(
-                        (m.get('series_ticker') or m.get('event_ticker') or m.get('ticker') or '').upper().startswith(pfx)
-                        for pfx in _BLOCKED_SERIES_PREFIXES
-                    )]
-                    if len(cached) < before:
-                        logger.info(f'[Kalshi] Pruned {before - len(cached):,} blocked-series markets from cache.')
-                    self._markets     = cached
-                    self.last_updated = datetime.fromtimestamp(
-                        os.path.getmtime(CACHE_FILE), tz=timezone.utc
-                    ).isoformat()
-                    self.status = 'ok'
-
-                    def _enrich_then_loop():
-                        series_list, _ = _fetch_series()
-                        if series_list:
-                            cat_map    = {s.get('ticker',''): s.get('category','') for s in series_list if s.get('ticker')}
-                            prefix_idx = _build_series_prefix_index(list(cat_map.keys()))
-                            with self._lock:
-                                stamped = 0
-                                for m in self._markets:
-                                    if not m.get('series_ticker'):
-                                        et = m.get('event_ticker', '')
-                                        if et:
-                                            st = _resolve_series_ticker(et, prefix_idx)
-                                            m['series_ticker'] = st
-                                    st = m.get('series_ticker', '')
-                                    if st and st in cat_map and not m.get('category'):
-                                        m['category'] = cat_map[st]
-                                        stamped += 1
-                                self._series  = series_list
-                                self._cat_map = cat_map
-                            _save_cache(SERIES_CACHE_FILE, series_list)
-                            logger.info(f'[Kalshi] Series enrichment done: {stamped} categories stamped.')
-                        self._start_hourly_thread(pull_now=False)
-
-                    threading.Thread(target=_enrich_then_loop, daemon=True).start()
-                    return
-
-        # Cache missing or stale → pull everything now in background
+        # No usable cache — pull everything now
         self.status = 'fetching'
         self._start_hourly_thread(pull_now=True)
 
@@ -711,20 +881,26 @@ class KalshiFeedManager:
         min_days:      Optional[float] = None,
     ) -> List[Dict]:
         """Return markets matching the given filters.
-        Prices are in cents (0-100). Category is inferred from series_ticker if blank.
+        Delegates to SQLite for indexed filtering — O(log n) instead of O(n).
+        Falls back to RAM scan if the DB is unavailable.
         """
+        if os.path.exists(DB_FILE):
+            return _db_filter_markets(
+                category=category, series_ticker=series_ticker,
+                event_ticker=event_ticker, min_price=min_price,
+                max_price=max_price, max_days=max_days, min_days=min_days,
+            )
+
+        # Fallback: RAM scan (identical logic to pre-SQLite, used only if DB absent)
         now = datetime.now(timezone.utc)
-        results = []
         with self._lock:
             snapshot = list(self._markets)
-
-        # Build prefix index once for series resolution
         with self._lock:
-            cat_map      = dict(self._cat_map)
+            cat_map = dict(self._cat_map)
         prefix_index = _build_series_prefix_index(list(cat_map.keys())) if cat_map else []
 
+        results = []
         for m in snapshot:
-            # Use stamped series_ticker or resolve from event_ticker
             raw_st = m.get('series_ticker') or ''
             if not raw_st:
                 et = m.get('event_ticker', '') or m.get('ticker', '')
@@ -733,60 +909,38 @@ class KalshiFeedManager:
                 elif et:
                     parts = et.rsplit('-', 1)
                     raw_st = parts[0] if len(parts) == 2 else et
-
-            # Series filter
-            if series_ticker:
-                if raw_st.upper() != series_ticker.upper():
-                    continue
-
-            # Event filter
-            if event_ticker:
-                if (m.get('event_ticker', '') or '').upper() != event_ticker.upper():
-                    continue
-
-            # Category filter — use stamped category, then cat_map, then infer
+            if series_ticker and raw_st.upper() != series_ticker.upper():
+                continue
+            if event_ticker and (m.get('event_ticker','') or '').upper() != event_ticker.upper():
+                continue
             if category:
-                inferred_cat = m.get('category') or cat_map.get(raw_st, '') or _infer_category(raw_st)
+                inferred_cat = m.get('category') or cat_map.get(raw_st,'') or _infer_category(raw_st)
                 if inferred_cat.lower() != category.lower():
                     continue
-
-            # Price filter — prices are cents (0-100)
-            # Try all price fields in priority order; convert dollar values to cents
-            yes_price = None
-            for field in ('yes_ask', 'last_price', 'yes_ask_dollars', 'last_price_dollars'):
+            yes_price = 0.0
+            for field in ('yes_ask','last_price','yes_ask_dollars','last_price_dollars'):
                 raw = m.get(field)
                 if raw is not None:
                     try:
                         v = float(raw)
                         if v > 0:
-                            yes_price = v
+                            yes_price = v * 100 if 0 < v <= 1.0 else v
                             break
                     except (TypeError, ValueError):
                         pass
-            if yes_price is None:
-                yes_price = 0.0
-            # Convert dollar values (0.0–1.0) to cents
-            if 0 < yes_price <= 1.0:
-                yes_price = yes_price * 100
-            # Allow zero-priced markets through when min_price is 0
             if yes_price == 0 and min_price == 0:
                 pass
             elif not (min_price <= yes_price <= max_price):
                 continue
-
-            # Time-remaining filter
             close_raw = m.get('close_time') or m.get('expiration_time')
             if close_raw:
                 try:
-                    close_dt  = datetime.fromisoformat(close_raw.replace('Z', '+00:00'))
+                    close_dt  = datetime.fromisoformat(close_raw.replace('Z','+00:00'))
                     days_left = (close_dt - now).total_seconds() / 86400
-                    if min_days is not None and days_left < min_days:
-                        continue
-                    if max_days is not None and days_left > max_days:
-                        continue
+                    if min_days is not None and days_left < min_days: continue
+                    if max_days is not None and days_left > max_days: continue
                 except Exception:
                     pass
-
             results.append(m)
         return results
 
@@ -921,6 +1075,7 @@ class KalshiFeedManager:
             self._error       = err  # partial error (some pages ok)
             self.last_updated = datetime.now(timezone.utc).isoformat()
             self.status       = 'ok'
+            # Update in-memory last_updated (DB timestamp set in _db_save_markets)
         # Fetch series and stamp markets
         series_list, _ = _fetch_series()
         if series_list:
@@ -941,7 +1096,7 @@ class KalshiFeedManager:
             with self._lock:
                 self._series  = series_list
                 self._cat_map = cat_map
-            _save_cache(SERIES_CACHE_FILE, series_list)
+            _db_save_series(series_list)
             logger.info(f'[Kalshi] Stamped {stamped} markets with series/category.')
 
         # Pre-index tokens on all markets for fast semantic scoring
@@ -949,8 +1104,11 @@ class KalshiFeedManager:
         for m in markets:
             _index_market_tokens(m)
 
-        _save_cache(CACHE_FILE, markets)
-        logger.info(f'[Kalshi] Cache saved: {len(markets)} markets.')
+        last_updated = datetime.now(timezone.utc).isoformat()
+        _db_save_markets(markets, last_updated)
+        # Also write debug sample files (small, for inspection)
+        if markets:
+            _save_cache(DEBUG_FILE, [markets[0]])
 
     def _start_hourly_thread(self, pull_now: bool) -> None:
         t = threading.Thread(target=self._hourly_loop, args=(pull_now,), daemon=True)

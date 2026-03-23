@@ -1,4 +1,4 @@
-# Event Trading Terminal — v1.8
+# Event Trading Terminal — v2.0
 **KLTT Holdings** | Internal research tool
 
 Real-time event detection and market intelligence terminal. Monitors Bluesky for breaking news, detects developing events through NLP and velocity analysis, surfaces relevant Kalshi prediction markets, and provides a live market detail view with Polymarket comparison.
@@ -46,7 +46,7 @@ Title bar on all pages: **Event Trading Terminal** brand (16px bold) → nav lin
 | Panel | Contents |
 |-------|---------|
 | **News Accounts** | Live feed from tracked priority accounts. Collapsible **Tracked Accounts** bar (add/remove, persists to `accounts.txt`). |
-| **Detected Events** | Events CRITICAL→HIGH→MEDIUM. Each card shows a two-line header: `[what]` on line 1, `[who]` · `[where]` · `[when]` on line 2 (labels always shown; "unknown" when not extractable). Collapsible **Spikes** bar. |
+| **Detected Events** | Events CRITICAL→HIGH→MEDIUM. Each card shows a two-line header: `[what] <event>` on line 1, `[who]` · `[where]` · `[when]` on line 2 (bracket labels always shown; "unknown" when not extractable). Collapsible **Spikes** bar. |
 | **Keyword Sweep** | Broad keyword search feed. Collapsible **Keywords** bar (add/pause/remove, persists to `custom_feeds.json`). Noise Filter slider. |
 
 All collapsible bars use the shared `.cbar` CSS system: `.cbar` → `.cbar-header` → `.cbar-arrow` + `.cbar-label` + `.cbar-count`, and `.cbar-body`. Collapse rotates arrow; count always visible.
@@ -116,7 +116,7 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 | File | Role |
 |------|------|
 | `app.py` | Flask routes, poll thread, corpus builder, live market + Polymarket routes |
-| `bluesky_feed.py` | AT Protocol client, feed management, persistence |
+| `bluesky_feed.py` | AT Protocol client, feed management, `keywords.json` persistence |
 | `post_scorer.py` | Modular noise scoring (11 active filters, incl. F14 topical relevance) |
 | `event_detector.py` | Event detection strategies, quality gates v2.1, semantic title generation, structured event components |
 | `nlp_enhancer.py` | NER, negation, semantic dedup, zero-shot, historical reference detection |
@@ -134,7 +134,7 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 | File | Contents |
 |------|---------|
 | `accounts.txt` | Tracked Bluesky handles (one per line, `#` comments preserved) |
-| `custom_feeds.json` | User-added keyword feeds + disabled states for built-in feeds |
+| `keywords.json` | All keyword search feeds (built-in + custom) — authoritative source. FEED_CONFIG in `bluesky_feed.py` is used only to bootstrap this file on first run. |
 
 ---
 
@@ -201,7 +201,7 @@ Logic (in priority order):
 
 Example: `"BREAKING An Iranian missile attack has damaged Qatar's main gas facility"` → **"Iran — Missile Attack — Qatar"**
 
-**Structured event components:** `_extract_semantic_title` now returns a `{who, what, where}` dict instead of a concatenated string. These components are stored directly on the event object and used by the event card UI to render a two-line header: line 1 is `[what]`, line 2 shows `[who]`, `[where]`, and `[when]` with their labels. Missing components display as "unknown" in muted italic.
+**Structured event components:** `_extract_semantic_title` now returns a `{who, what, where}` dict instead of a concatenated string. These components are stored directly on the event object and used by the event card UI to render a two-line header: line 1 is `[what] <event text>` (bracket label + value on same line), line 2 shows `[who]`, `[where]`, and `[when]` with their labels. Missing components display as "unknown" in muted italic.
 
 **Impact on Event Matches column:** Richer event titles feed better tokens into the Kalshi semantic match corpus. The quality gates also reduce false-positive events, cleaning up the corpus overall.
 
@@ -369,6 +369,27 @@ Score color coding: blue ≥35% (strong match), amber 18–34% (plausible), grey
 Row 1: S&P 500, NASDAQ, DOW, DAX, FTSE 100, CAC 40
 Row 2: VIX, Brent Crude, WTI Crude, Nat Gas, Gasoline (AAA), Bitcoin
 
+### CME Globex Weekend Closure
+
+`_is_cme_globex_open()` detects when CME Globex is closed (Friday 17:00 → Sunday 18:00 ET). During this window:
+- **Equity futures** (ES=F, NQ=F, YM=F): `futures: null` returned — tile shows `CLOSED` instead of stale 0.00% data
+- **Always-futures markets** (Brent, WTI, NatGas): `is_open: false`; badge changes to `CLOSED`; `next_open` shows countdown to Sun 18:00 ET
+- `_cme_globex_next_open()` computes the time until Globex reopens for the countdown display
+
+`hide_countdown` on always-futures markets is overridden to allow `next_open` to show when closed — prior to v2.0 the countdown was permanently suppressed by this flag.
+
+### Sparkline Fallback
+
+`_fetch_index` now uses a two-pass approach for sparklines:
+1. Try `period='1d', interval='5m'` (today's intraday bars)
+2. If empty (weekend/holiday), fall back to `period='5d', interval='5m'` and slice out only the most recent trading day's bars
+
+This means closed markets (S&P on Saturday, Brent on Sunday, etc.) still show Friday's full intraday chart rather than a blank area.
+
+### Gasoline Sparkline
+
+`_fetch_aaa` builds a 4-point trend sparkline from AAA data: `[month_ago, week_ago, yesterday, current]`. This gives a meaningful price direction even though AAA only provides daily data points.
+
 ---
 
 ## Gas Prices (AAA)
@@ -466,11 +487,11 @@ Kalshi data loads in background from SQLite (`data/kalshi.db`), created automati
 | Constant | Default | Effect |
 |----------|---------|--------|
 | `ACCOUNTS_FILE` | `accounts.txt` | Tracked handles |
-| `CUSTOM_FEEDS_FILE` | `custom_feeds.json` | Persisted keyword feeds |
+| `KEYWORDS_FILE` | `keywords.json` | All keyword feeds — authoritative source |
 | `MAX_CACHED_POSTS` | 150 | Posts in memory |
 
-**Default FEED_CONFIG (11 feeds):**
-Format labels (`just in`, `developing story`, `flash alert`) removed — spam-dominated; covered defensively by `ENTITY_REQUIRED_PHRASES`. Multi-word queries split into atomic feeds; ambiguous terms quoted.
+**Default feeds (11) — bootstrapped into `keywords.json` on first run:**
+Format labels (`just in`, `developing story`, `flash alert`) removed — spam-dominated; covered defensively by `ENTITY_REQUIRED_PHRASES`. Multi-word queries split into atomic feeds; ambiguous terms quoted. Once `keywords.json` exists, `FEED_CONFIG` is ignored — edit feeds via the UI or edit `keywords.json` directly.
 
 | ID | Query | Limit |
 |----|-------|-------|
@@ -528,7 +549,22 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 
 ### `app.py`
 
+**`keywords.json` (authoritative feed list):**
+All keyword feeds — both built-in and user-added — are stored as a flat JSON array in `keywords.json`. Each entry is a feed dict with `id`, `name`, `type`, `query`, `limit`, `enabled`, and optionally `custom: true`. On first run, this file is bootstrapped from `FEED_CONFIG` in `bluesky_feed.py`. Every add, remove, and toggle via the UI writes the full list immediately. To edit feeds without the UI: stop Flask, edit `keywords.json` directly, restart Flask.
+
+**Migration from `custom_feeds.json`:** On first startup after upgrading, `_load_keywords()` detects the old `{custom, disabled_ids}` format, merges it with `FEED_CONFIG`, and writes `keywords.json` automatically. The old `custom_feeds.json` is left in place (harmless — ignored from then on).
+
+### `app.py`
+
 `_LOCATION_ALIASES` — dict mapping city names to Kalshi location codes (e.g. `'san antonio' → ['satx']`). Extend when new weather/temperature markets for unlisted cities are added. Search automatically expands city name queries to their corresponding codes and vice versa.
+
+### `market_indices.py`
+
+`_is_cme_globex_open()` — checks ET weekday/time against CME Globex schedule. Update `CLOSE_T` (Fri 17:00) and `REOPEN_T` (Sun 18:00) if CME ever changes its maintenance window.
+
+`_cme_globex_next_open()` — walks forward to next Sunday 18:00 ET. The ±0 case (it's already Sunday before 18:00) is handled separately.
+
+**`always_futures` tiles:** These markets (`brent`, `wti`, `natgas`) have `hide_countdown=True` and `always_futures=True` in `INDICES_CONFIG`. The `next_open` field is passed through despite `hide_countdown` when `always_futures` is set — don't remove that exception or the countdown disappears again.
 
 ### `gas_prices.py`
 
@@ -552,6 +588,8 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 - **SQLite token columns:** The `_tok` frozenset is not stored in SQLite (not serialisable). It is rebuilt in RAM at load time via `_index_market_tokens`. If the scoring formula changes, the RAM index rebuilds automatically on next startup.
 - **Event card [who]/[where] accuracy:** `_extract_semantic_title` uses word-list entity extraction when spaCy is unavailable. Actor/target order can be inverted in posts where a demonym appears before the country name. spaCy dependency parsing would improve this.
 - **F14 `_SIGNAL_VOCAB` coverage:** The vocabulary is manually curated. New feed topics outside the current set (entertainment, sports, etc.) would need vocab additions to avoid false hides.
+- **Sparkline 5d fallback — daily maintenance break:** CME Globex has a ~1h maintenance break every day around 17:00–18:00 ET. During this window, both the 1d and 5d fetches may return empty/partial data. The sparkline will be blank for that hour on weekdays.
+- **Gasoline sparkline resolution:** AAA provides only 4 data points (current, yesterday, week ago, month ago). The sparkline is directionally useful but has no intraday resolution.
 
 ---
 
@@ -568,3 +606,4 @@ Format labels (`just in`, `developing story`, `flash alert`) removed — spam-do
 | v1.8 | **SQLite migration**: `kalshi_feed.py` persistence layer replaced — markets and series stored in `data/kalshi.db` (SQLite, WAL mode) instead of `kalshi_markets.json`. `filter_markets` now runs indexed SQL queries (`category`, `series_ticker`, `yes_price_cents`, `close_ts` all indexed) instead of full RAM scans. `self._markets` retained in RAM for token scoring only. One-time automatic migration from legacy JSON on first run. `_db_connect`, `_db_is_fresh`, `_db_load_markets/series`, `_db_save_markets/series`, `_db_filter_markets` added; `_cache_is_fresh`/`_load_cache`/`_save_cache` retained as legacy-only helpers. |
 | v1.7 | **Market Detail page redesign**: two-column layout (`ctx-sizer-cols` for context+sizer side-by-side, `inner-cols` for chart+orderbook side-by-side); three prediction market comparison panels side-by-side (`comparisons-cols` — Polymarket, Manifold, Metaculus); Matched Events + Posts in `matches-cols` full-width grid; siblings table paginated (10 per page, Prev/Next nav); price chart fixed (`close_dollars` field, was silently returning null); Order Book header moved inside bordered box. **Manifold + Metaculus**: new `/api/manifold/match` and `/api/metaculus/match` routes; `buildManifold` + `buildMetaculus` JS functions; all three comparisons fetched in parallel on page load. **Polymarket**: closed markets filtered from comparison results. **Dual Kalshi API**: `kalshi_feed.py` now fetches from both `api.elections.kalshi.com` and `trading-api.kalshi.com` and merges by ticker — covers weather/temperature and other non-election markets previously missing. `/api/kalshi/market/<ticker>` also tries both domains. **Category name fix**: `_infer_category` corrected `'Climate'` → `'Climate and Weather'` and `'Tech & Science'` → `'Science and Technology'` to match `CANONICAL_CATS`. **All Markets search redesign**: search bar moved to top of column (aligns with Confidence slider in col 2); filter priority enforced — category primary, series secondary, search tertiary; `mpBuildSearchSeriesList` fetches all matching series in one background call (stable across pagination); `mpSelectCat` preserves search query and re-scopes it; `mpSelectSeries` clears search on drill-down. **Search expanded**: matches `series_ticker` + `event_ticker` in addition to title/subtitle/ticker. **`_LOCATION_ALIASES`**: 40+ city-name → Kalshi location-code mappings so searching "san antonio" finds `KXHIGHTSATX` markets. |
 | v1.6 | **Feed enabled fix**: `bluesky_feed.py` fetch loop now respects the `enabled` flag — disabled feeds are skipped at fetch time (was only persisted, not enforced). **FEED_CONFIG restructured**: 8 → 11 atomic feeds; format-label feeds removed (`just in`, `developing story`, `flash alert`); ambiguous queries split and quoted (`"rate hike"`, `"market crash"`, `"breaking news"`, `"declared emergency"`, `"interest rate"`, `"fed reserve"`). **Source weights**: 16 accounts from `accounts.txt` now explicitly weighted in `SOURCE_TIER_WEIGHTS`; `fintwitter` promoted to 3; `ms.now` (MSNBC) added at 2. **Breaking: phrases removed**: `breaking:`, `breaking --`, `breaking —` removed from CRITICAL triggers — were matching any post opening with "BREAKING:" regardless of content. `breaking` bare word added to `ENTITY_REQUIRED_WORDS` + threshold 5. `ENTITY_REQUIRED_PHRASES` added for format-label phrases. **VelocitySpikeStrategy improvements**: dim/hide skip at ingest; per-word historical reference filter at ingest; `_spike_entity_coherent` gate (entity coherence across posts); semantic titles via `_generate_spike_title` reusing `_extract_semantic_title`. **F14 TopicalRelevanceFilter**: new `post_scorer.py` filter; posts with zero words from `_SIGNAL_VOCAB` (~120 news/event terms) receive +3 (hide). **Structured event components**: `_extract_semantic_title` returns `{who, what, where}` dict; all three strategies store components on event objects. **Event card redesign**: two-line header — `[what]` on line 1; `[who]` · `[where]` · `[when]` on line 2 with bracket labels; "unknown" shown in muted italic when unavailable. **Noise filter default**: keyword sweep hide threshold lowered 5 → 3. **Logo**: KLTT Holdings text replaced with `kltt-logo.png` on all three pages (drop in `EventDashboard/static/`). **Updated panel**: market bar "Updated" text now vertical, inward-facing, single line showing "Updated · Xm ago". **Collapsible bars**: Tracked Accounts, Spikes, Keywords bars now default to collapsed on startup. **Dashboard overlay**: Event Dashboard loading overlay replaced with full step-indicator + page-counter version matching Market Dashboard. **Bug fixes**: overlay `pollTimer` race fixed on both dashboards (both `resolvedImmediately` + `shown` guards); `_generate_spike_title` dict handling; `ZeroShotStrategy` stale variable references (`pseudo_cluster`, `sorted_c`); `self._extract_semantic_title` called on wrong class in spike/zero-shot strategies. |
+| v2.0 | **`[what]` label on event cards**: event card line 1 now shows `[what]` bracket label inline with the event text, consistent with `[who]`/`[where]`/`[when]` on line 2. **`keywords.json` authoritative feed source**: `bluesky_feed.py` now uses `keywords.json` (flat list of all feeds) instead of the old `custom_feeds.json` (which only stored deltas). `FEED_CONFIG` is used only to bootstrap the file on first run; all subsequent reads and writes go through `keywords.json`. Automatic migration from `custom_feeds.json` on first startup. **Market indices overhaul** (`market_indices.py`): CME Globex weekend closure detection (`_is_cme_globex_open`, `_cme_globex_next_open`) — equity futures return `null` during Fri 17:00→Sun 18:00 ET window instead of stale 0.00% data; always-futures tiles (Brent/WTI/NatGas) show `CLOSED` badge + countdown during the same window; `hide_countdown` overridden for always-futures when closed. **Sparkline fallback**: 5-day fallback fetch when 1d returns empty (weekend/holiday) — shows previous trading day's full chart. **Gasoline sparkline**: 4-point trend built from AAA data (month_ago → week_ago → yesterday → current). **Dashboard hardening**: logo `<img>` restored on all three pages after regression; noise filter default confirmed at 3; `spikeCollapsed`/`acctCollapsed`/`sf3KwCollapsed` confirmed defaulting to `true` with `collapsed` class baked into HTML. **Event card who/what/where subheaders**: `renderEvent` in `dashboard.html` now renders a two-line header using the structured `who`/`what`/`where` fields from the event object — `[what]` on line 1, `[who]`·`[where]`·`[when]` on line 2 with bracket labels and muted "unknown" fallback. **Regression fixes**: overlay `pollTimer` and `shown` guards re-verified; `market-updated-combined` vertical panel size corrected to match sidebar label weight; `always_futures` `next_open` unblocked from `hide_countdown` suppression. |

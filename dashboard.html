@@ -997,6 +997,24 @@
 
     .event-title { font-size: 13px; font-weight: 600; color: #dddddd; line-height: 1.4; flex: 1; }
 
+    /* Two-line event header: [what] on line 1, [who]·[where]·[when] on line 2 */
+    .event-header { flex: 1; min-width: 0; }
+    .event-header-what {
+      font-size: 13px; font-weight: 600; color: #dddddd;
+      line-height: 1.35; margin-bottom: 3px;
+    }
+    .event-header-meta {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      font-size: 10px; line-height: 1.3;
+    }
+    .event-header-lbl {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: #333;
+      margin-right: 2px;
+    }
+    .event-header-val { color: #666; }
+    .event-header-val.unknown { color: #2a2a2a; font-style: italic; }
+
     .event-sev {
       font-size: 9px; font-weight: 700;
       letter-spacing: 0.18em; text-transform: uppercase;
@@ -1521,7 +1539,7 @@
                 <li><strong>Repeat handle</strong> — same account posting 3+ times in one batch (+2–3)</li>
               </ul>
               <div class="sf3-tooltip-thresholds">
-                The slider sets the <strong>hide threshold</strong> (default 5). Posts above the threshold
+                The slider sets the <strong>hide threshold</strong> (default 3). Posts above the threshold
                 are filtered out entirely. Posts within 2 points below it are dimmed.
                 Priority news accounts are never filtered.
               </div>
@@ -1533,11 +1551,11 @@
             <div class="sf3-slider-track">
               <div class="sf3-slider-fill" id="sf3-slider-fill"></div>
               <input type="range" class="sf3-slider" id="sf3-threshold"
-                     min="3" max="10" step="1" value="5"
+                     min="3" max="10" step="1" value="3"
                      oninput="sf3UpdateThreshold()">
             </div>
           </div>
-          <div class="sf3-filter-value" id="sf3-threshold-label">5</div>
+          <div class="sf3-filter-value" id="sf3-threshold-label">3</div>
           <div class="sf3-filter-hint" id="sf3-filter-hint">hide ≥5 · dim ≥3</div>
         </div>
       </div>
@@ -2002,10 +2020,31 @@ function renderEvent(e) {
   const expandBtn = hasPosts
     ? `<button class="event-expand-btn" onclick="event.stopPropagation(); toggleEventExpand(this.closest('.event-item'))">▼ expand</button>`
     : '';
+  // Build two-line header from structured fields (who/what/where) if present,
+  // fall back to plain title if not
+  const hasStructured = e.what || e.who || e.where;
+  const whatText = e.what  || esc(e.title);
+  const whoVal   = e.who   || null;
+  const whereVal = e.where || null;
+  const whenVal  = relTime(e.detected_at);
+
+  const metaItems = [
+    whoVal   ? `<span><span class="event-header-lbl">[who]</span><span class="event-header-val">${esc(whoVal)}</span></span>`   : `<span><span class="event-header-lbl">[who]</span><span class="event-header-val unknown">unknown</span></span>`,
+    whereVal ? `<span><span class="event-header-lbl">[where]</span><span class="event-header-val">${esc(whereVal)}</span></span>` : `<span><span class="event-header-lbl">[where]</span><span class="event-header-val unknown">unknown</span></span>`,
+    `<span><span class="event-header-lbl">[when]</span><span class="event-header-val">${whenVal}</span></span>`,
+  ].join('');
+
+  const headerHTML = hasStructured
+    ? `<div class="event-header">
+        <div class="event-header-what"><span class="event-header-lbl">[what]</span> ${esc(whatText)}</div>
+        <div class="event-header-meta">${metaItems}</div>
+       </div>`
+    : `<div class="event-title">${esc(e.title)}</div>`;
+
   return `<div class="event-item" data-severity="${e.severity}" data-keyword="${e.keyword||''}" data-strategy="${e.strategy||''}" onclick="toggleEventExpand(this)">
     <div class="event-sev-line sev-${e.severity}"></div>
     <div class="event-top">
-      <div class="event-title">${esc(e.title)}</div>
+      ${headerHTML}
       <div class="event-sev sev-badge-${e.severity}">${e.severity}</div>
       ${e.status === 'breaking'   ? '<span class="evt-status-badge evt-status-breaking">🔴 NEW</span>'    : ''}
       ${e.status === 'developing' ? '<span class="evt-status-badge evt-status-developing">🟡 Developing</span>' : ''}
@@ -2222,7 +2261,7 @@ setInterval(renderSpikeBar, 30000);
 // PANEL 3: SEARCH FEED
 // ══════════════════════════════════════════════════════════════════════════════
 
-let sf3HideThreshold = 5;   // noise_score >= this → hidden
+let sf3HideThreshold = 3;   // noise_score >= this → hidden
 let sf3DimThreshold  = 3;   // noise_score >= this → dimmed
 
 function sf3UpdateThreshold() {

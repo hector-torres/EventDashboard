@@ -14,6 +14,7 @@ Authentication:
 Rate limits: ~3000 req/5min for authenticated endpoints (we poll every 30s = safe)
 """
 
+import logging
 import os
 import requests
 import time
@@ -31,9 +32,11 @@ BSKY_PASSWORD = os.environ.get("BSKY_PASSWORD", "")  # Use an App Password
 
 # ─── Priority accounts file ───────────────────────────────────────────────────
 ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__), "accounts.txt")
-KEYWORDS_FILE = os.path.join(os.path.dirname(__file__), "keywords.json")
+CUSTOM_FEEDS_FILE = os.path.join(os.path.dirname(__file__), "custom_feeds.json")
 
 # ─── Feed Configuration (add/remove feeds here) ───────────────────────────────
+logger = logging.getLogger(__name__)
+
 FEED_CONFIG = [
     # ── High-signal wire/alert phrases ───────────────────────────────────────
     {
@@ -110,7 +113,7 @@ PRIORITY_POST_WEIGHT  = 3   # Priority account posts count this many times towar
 
 class BlueSkyFeedManager:
     def __init__(self):
-        self.active_feeds       = []   # populated by _load_keywords() below
+        self.active_feeds       = [f for f in FEED_CONFIG if f['enabled']]
         self._cache: List[Dict] = []
         self._seen_uris: set    = set()
         self.last_updated: Optional[str] = None
@@ -125,7 +128,7 @@ class BlueSkyFeedManager:
             'Accept':     'application/json',
         })
         self._authenticate()
-        self._load_keywords()       # load all feeds from keywords.json (or bootstrap)
+        self._load_custom_feeds()   # restore persisted keywords
 
     # ── Priority accounts ──────────────────────────────────────────────────────
 
@@ -133,7 +136,7 @@ class BlueSkyFeedManager:
         """Load priority handles from accounts.txt. Strips @ prefix and comments."""
         handles = set()
         if not os.path.exists(ACCOUNTS_FILE):
-            print(f"[BlueSky] No accounts.txt found at {ACCOUNTS_FILE} — skipping priority accounts.")
+            logger.info("[BlueSky] No accounts.txt found at %s — skipping", ACCOUNTS_FILE)
             return handles
         with open(ACCOUNTS_FILE, 'r') as f:
             for line in f:
@@ -142,7 +145,7 @@ class BlueSkyFeedManager:
                     continue
                 handle = line.lstrip('@').lower()
                 handles.add(handle)
-        print(f"[BlueSky] Loaded {len(handles)} priority account(s) from accounts.txt")
+        logger.info("[BlueSky] Loaded %d priority account(s)", len(handles))
         return handles
 
     def reload_priority_accounts(self):
@@ -155,14 +158,10 @@ class BlueSkyFeedManager:
     def _authenticate(self):
         """Create a Bluesky session and store the Bearer token."""
         if not BSKY_HANDLE or not BSKY_PASSWORD:
-            print("[BlueSky] No credentials found.")
-            print("          Create a .env file in the project root with:")
-            print("")
-            print("            BSKY_HANDLE=yourhandle.bsky.social")
-            print("            BSKY_PASSWORD=xxxx-xxxx-xxxx-xxxx")
-            print("")
-            print("          Recommended: use a Bluesky App Password, not your main password.")
-            print("          (Bluesky > Settings > Privacy and Security > App Passwords)")
+            logger.warning(
+                "[BlueSky] No credentials found. Create a .env with "
+                "BSKY_HANDLE and BSKY_PASSWORD (use a Bluesky App Password)."
+            )
             self.status = "no_credentials"
             return
 
@@ -179,16 +178,16 @@ class BlueSkyFeedManager:
             self.session.headers.update({"Authorization": f"Bearer {self._access_token}"})
             # Tokens expire after ~2h; schedule refresh 5 min early
             self._token_expiry = time.time() + 7200 - 300
-            print(f"[BlueSky] Authenticated as @{data.get('handle')}")
+            logger.info("[BlueSky] Authenticated as @%s", data.get("handle"))
             self.status = "live"
         except Exception as e:
-            print(f"[BlueSky] Authentication failed: {e}")
+            logger.warning("[BlueSky] Authentication failed: %s", e)
             self.status = f"auth_error: {e}"
 
     def _ensure_token(self):
         """Re-authenticate if the token has expired."""
         if not self._access_token or time.time() >= self._token_expiry:
-            print("[BlueSky] Token expired - re-authenticating...")
+            logger.info("[BlueSky] Token expired — re-authenticating")
             self._authenticate()
 
     # ── Fetching ───────────────────────────────────────────────────────────────
@@ -217,10 +216,8 @@ class BlueSkyFeedManager:
         all_results = []  # list of (raw_post, feed)
 
         with ThreadPoolExecutor(max_workers=12) as pool:
-            # Submit all search feeds — skip disabled feeds
+            # Submit all search feeds
             for feed in self.active_feeds:
-                if not feed.get('enabled', True):
-                    continue
                 f = pool.submit(_fetch_search, feed)
                 tasks[f] = ('feed', feed['id'])
             # Submit all priority account feeds
@@ -233,7 +230,7 @@ class BlueSkyFeedManager:
                 try:
                     all_results.extend(future.result())
                 except Exception as e:
-                    print(f"[BlueSky] Error fetching {kind} '{name}': {e}")
+                    logger.warning("[BlueSky] Error fetching %s '%s': %s", kind, name, e)
 
         new_posts = []
         for raw_post, feed in all_results:
@@ -248,8 +245,7 @@ class BlueSkyFeedManager:
             self._cache = (new_posts + self._cache)[:MAX_CACHED_POSTS]
             hidden = sum(1 for p in new_posts if p.get('noise_bucket') == 'hide')
             dimmed = sum(1 for p in new_posts if p.get('noise_bucket') == 'dim')
-            print(f"[BlueSky] Fetched {len(new_posts)} new posts "
-                  f"(hide={hidden} dim={dimmed}). Cache: {len(self._cache)}")
+            logger.info("[BlueSky] Fetched %d new posts (hide=%d dim=%d). Cache: %d", len(new_posts), hidden, dimmed, len(self._cache))
 
         # Always mark live + update timestamp after a successful fetch
         # (even if no new posts — all seen_uris already cached)
@@ -374,65 +370,41 @@ class BlueSkyFeedManager:
 
         return post
 
-    def _save_keywords(self):
-        """Persist all active feeds (built-in + custom) to keywords.json.
-        keywords.json is the authoritative source — FEED_CONFIG is only used
-        to bootstrap the file on first run.
-        """
+    def _save_custom_feeds(self):
+        """Persist custom + toggled feeds to custom_feeds.json."""
         import json as _json
         try:
-            with open(KEYWORDS_FILE, 'w') as fh:
-                _json.dump(self.active_feeds, fh, indent=2)
+            data = {
+                'custom': [f for f in self.active_feeds if f.get('custom')],
+                'disabled_ids': [f['id'] for f in self.active_feeds
+                                 if not f.get('custom') and not f['enabled']],
+            }
+            with open(CUSTOM_FEEDS_FILE, 'w') as fh:
+                _json.dump(data, fh, indent=2)
         except Exception as e:
-            print(f"[BlueSky] Failed to save keywords.json: {e}")
+            logger.warning('[BlueSky] Failed to save custom_feeds.json: %s', e)
 
-    # Keep old name as alias so any external callers don't break
-    _save_custom_feeds = _save_keywords
-
-    def _load_keywords(self):
-        """Load all feeds from keywords.json.
-        If the file doesn't exist yet (first run), bootstrap from FEED_CONFIG
-        and write keywords.json immediately so it becomes authoritative.
-        Handles both the new flat-list format and the old {custom, disabled_ids}
-        format so existing custom_feeds.json files are migrated automatically.
-        """
+    def _load_custom_feeds(self):
+        """Load persisted custom feeds and disabled states."""
         import json as _json
-        if not os.path.exists(KEYWORDS_FILE):
-            # First run — bootstrap from FEED_CONFIG and write the file
-            self.active_feeds = [dict(f) for f in FEED_CONFIG]
-            self._save_keywords()
-            print(f"[BlueSky] Bootstrapped keywords.json from FEED_CONFIG "
-                  f"({len(self.active_feeds)} feeds)")
+        if not os.path.exists(CUSTOM_FEEDS_FILE):
             return
         try:
-            with open(KEYWORDS_FILE) as fh:
+            with open(CUSTOM_FEEDS_FILE) as fh:
                 data = _json.load(fh)
-            if isinstance(data, list):
-                # New format — flat list of feed dicts
-                self.active_feeds = data
-                print(f"[BlueSky] Loaded {len(self.active_feeds)} feed(s) from keywords.json")
-            elif isinstance(data, dict):
-                # Old custom_feeds.json format — migrate on the fly
-                self.active_feeds = [dict(f) for f in FEED_CONFIG]
-                disabled = set(data.get('disabled_ids', []))
-                for f in self.active_feeds:
-                    if f['id'] in disabled:
-                        f['enabled'] = False
-                existing_ids = {f['id'] for f in self.active_feeds}
-                for cf in data.get('custom', []):
-                    if cf.get('id') and cf['id'] not in existing_ids:
-                        self.active_feeds.append(cf)
-                self._save_keywords()   # write new format immediately
-                print(f"[BlueSky] Migrated custom_feeds.json → keywords.json "
-                      f"({len(self.active_feeds)} feeds)")
-            else:
-                raise ValueError("Unrecognised keywords.json format")
+            # Apply disabled states to built-in feeds
+            disabled = set(data.get('disabled_ids', []))
+            for f in self.active_feeds:
+                if f['id'] in disabled:
+                    f['enabled'] = False
+            # Re-add custom feeds (avoid duplicates)
+            existing_ids = {f['id'] for f in self.active_feeds}
+            for cf in data.get('custom', []):
+                if cf.get('id') and cf['id'] not in existing_ids:
+                    self.active_feeds.append(cf)
+            logger.info('[BlueSky] Loaded %d custom feed(s) from custom_feeds.json', len(data.get('custom', [])))
         except Exception as e:
-            print(f"[BlueSky] Failed to load keywords.json: {e} — falling back to FEED_CONFIG")
-            self.active_feeds = [dict(f) for f in FEED_CONFIG]
-
-    # Keep old name as alias
-    _load_custom_feeds = _load_keywords
+            logger.warning('[BlueSky] Failed to load custom_feeds.json: %s', e)
 
     # ── Cache access ───────────────────────────────────────────────────────────
 
@@ -448,7 +420,7 @@ class BlueSkyFeedManager:
             return False
         self.priority_handles.add(handle)
         self._save_accounts()
-        print(f"[BlueSky] Added account: @{handle}")
+        logger.info('[BlueSky] Added account: @%s', handle)
         return True
 
     def remove_account(self, handle: str) -> bool:
@@ -458,7 +430,7 @@ class BlueSkyFeedManager:
             return False
         self.priority_handles.discard(handle)
         self._save_accounts()
-        print(f"[BlueSky] Removed account: @{handle}")
+        logger.info('[BlueSky] Removed account: @%s', handle)
         return True
 
     def _save_accounts(self):
@@ -480,7 +452,7 @@ class BlueSkyFeedManager:
             with open(ACCOUNTS_FILE, 'w') as f:
                 f.write('\n'.join(lines) + '\n')
         except Exception as e:
-            print(f"[BlueSky] Failed to save accounts.txt: {e}")
+            logger.warning('[BlueSky] Failed to save accounts.txt: %s', e)
 
     def add_keyword(self, query: str, limit: int = 20) -> dict:
         """Add a new search query feed at runtime. Returns the new feed config."""
@@ -503,8 +475,8 @@ class BlueSkyFeedManager:
             'custom':  True,   # marks as user-added
         }
         self.active_feeds.append(feed)
-        self._save_keywords()
-        print(f"[BlueSky] Added keyword feed: '{query}'")
+        self._save_custom_feeds()
+        logger.info('[BlueSky] Added keyword feed: %s', query)
         return feed
 
     def remove_keyword(self, feed_id: str) -> bool:
@@ -513,8 +485,8 @@ class BlueSkyFeedManager:
         self.active_feeds = [f for f in self.active_feeds if f['id'] != feed_id]
         removed = len(self.active_feeds) < before
         if removed:
-            self._save_keywords()
-            print(f"[BlueSky] Removed keyword feed: {feed_id}")
+            self._save_custom_feeds()
+            logger.info('[BlueSky] Removed keyword feed: %s', feed_id)
         return removed
 
     def toggle_keyword(self, feed_id: str) -> bool:
@@ -522,7 +494,7 @@ class BlueSkyFeedManager:
         for f in self.active_feeds:
             if f['id'] == feed_id:
                 f['enabled'] = not f['enabled']
-                self._save_keywords()
+                self._save_custom_feeds()
                 return f['enabled']
         return False
 

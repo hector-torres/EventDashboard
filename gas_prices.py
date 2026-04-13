@@ -4,10 +4,12 @@ Refreshes at 00:00, 08:00, 16:00 UTC (every ~8 hours).
 Source: https://gasprices.aaa.com/
 """
 
+import json
+import os
 import threading
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 try:
     import requests
@@ -20,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 # UTC hours to refresh at
 REFRESH_HOURS_UTC = {0, 8, 16}
+
+_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'data', 'gasoline_history.json')
+_HISTORY_DAYS = 7   # rolling window
 
 _AAA_URL = 'https://gasprices.aaa.com/'
 _HEADERS  = {
@@ -61,12 +66,18 @@ class GasPricesManager:
         self._lock        = threading.Lock()
         self._last_hour   = -1   # which UTC hour we last fetched on
         self._thread      = None
+        self._history     = self._load_history()  # list of {date, price} dicts
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     def get_data(self):
         with self._lock:
             return dict(self._data)
+
+    def get_history(self):
+        """Return rolling daily price history (up to 7 days), newest last."""
+        with self._lock:
+            return list(self._history)
 
     def start(self):
         """Start background refresh thread."""
@@ -81,6 +92,35 @@ class GasPricesManager:
         threading.Thread(target=self._fetch, daemon=True).start()
 
     # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _load_history(self):
+        """Load existing daily history from disk, or return empty list."""
+        try:
+            if os.path.exists(_HISTORY_FILE):
+                with open(_HISTORY_FILE) as fh:
+                    data = json.load(fh)
+                # Filter to last _HISTORY_DAYS days, ensure sorted oldest-first
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=_HISTORY_DAYS)).date().isoformat()
+                return [e for e in data if e.get('date', '') >= cutoff]
+        except Exception as e:
+            logger.warning(f'[GasPrices] Failed to load history: {e}')
+        return []
+
+    def _append_history(self, price, date_str):
+        """Append today's price to rolling history and save. Deduplicates by date."""
+        try:
+            os.makedirs(os.path.dirname(_HISTORY_FILE), exist_ok=True)
+            # Remove any existing entry for same date, then append
+            self._history = [e for e in self._history if e.get('date') != date_str]
+            self._history.append({'date': date_str, 'price': price})
+            # Keep only last _HISTORY_DAYS
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=_HISTORY_DAYS)).date().isoformat()
+            self._history = [e for e in self._history if e.get('date', '') >= cutoff]
+            self._history.sort(key=lambda e: e['date'])
+            with open(_HISTORY_FILE, 'w') as fh:
+                json.dump(self._history, fh, indent=2)
+        except Exception as e:
+            logger.warning(f'[GasPrices] Failed to save history: {e}')
 
     def _loop(self):
         # Fetch immediately on startup
@@ -109,6 +149,10 @@ class GasPricesManager:
             with self._lock:
                 self._data = data
                 self._last_hour = datetime.now(timezone.utc).hour
+                # Record one daily snapshot (keyed by today's UTC date)
+                if data.get('current') is not None:
+                    today = datetime.now(timezone.utc).date().isoformat()
+                    self._append_history(data['current'], today)
             logger.info(f'[GasPrices] fetched OK — Regular ${data.get("current")} as of {data.get("as_of")}')
         except Exception as e:
             logger.warning(f'[GasPrices] fetch error: {e}')

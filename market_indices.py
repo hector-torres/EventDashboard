@@ -17,6 +17,7 @@ Futures (used when primary market is closed):
   DAX=F   — DAX Futures (if available)
 """
 
+import logging
 import yfinance as yf
 from datetime import datetime, timezone, time as dtime
 import pytz
@@ -180,21 +181,20 @@ INDICES_CONFIG = [
         'tooltip':        'US National Average Regular Gasoline · Source: AAA · Updated 00:00, 08:00, 16:00 UTC',
     },
     {
-        'id':             'btc',
-        'label':          'BTC-USD',
-        'symbol':         'BTC-USD',
-        'futures':        None,
+        'id':             'measles',
+        'label':          'Measles',
+        'symbol':         None,
+        'source':         'measles',
         'currency':       'USD',
-        'exchange_tz':    'America/New_York',
-        'open_time':      dtime(0, 0),
-        'close_time':     dtime(23, 59),
-        'market_days':    [0, 1, 2, 3, 4, 5, 6],
+        'currency_sym':   '',
         'row':            2,
         'always_open':    True,
-        'hide_countdown': True,   # trades 24/7 — no meaningful close time
-        'tooltip':        'Bitcoin spot price (BTC-USD) · Trades 24/7 globally · No close time · 15-min delayed (Yahoo Finance)',
+        'hide_countdown': True,
+        'tooltip':        'US Cumulative YTD Measles Cases · Source: CDC · Updated weekly (Thursdays) · cdc.gov/measles/data-research',
     },
 ]
+
+logger = logging.getLogger(__name__)
 
 CURRENCY_SYMBOLS = {'USD': '$', 'EUR': '€', 'GBP': '£'}
 
@@ -316,7 +316,7 @@ class MarketIndicesManager:
 
     # ── Fetching ───────────────────────────────────────────────────────────────
 
-    def fetch_all(self, gas_manager=None) -> List[Dict]:
+    def fetch_all(self, gas_manager=None, measles_manager=None) -> List[Dict]:
         """Fetch all configured indices. Returns list of normalized index dicts."""
         results = []
         for cfg in INDICES_CONFIG:
@@ -324,20 +324,22 @@ class MarketIndicesManager:
                 if cfg.get('source') == 'aaa':
                     # AAA-sourced entry — pull from gas_manager, not Yahoo
                     data = self._fetch_aaa(cfg, gas_manager)
+                elif cfg.get('source') == 'measles':
+                    data = self._fetch_measles(cfg, measles_manager)
                 else:
                     data = self._fetch_index(cfg)
                 if data:
                     results.append(data)
                     self._cache[cfg['id']] = data
             except Exception as e:
-                print(f"[Markets] Error fetching {cfg['label']}: {e}")
+                logger.warning("[Markets] Error fetching %s: %s", cfg["label"], e)
                 # Return stale cache if available
                 if cfg['id'] in self._cache:
                     results.append(self._cache[cfg['id']])
 
         self.last_updated = datetime.now(timezone.utc).isoformat()
         self.status = "live"
-        print(f"[Markets] Fetched {len(results)} indices.")
+        logger.info("[Markets] Fetched %d indices.", len(results))
         return results
 
     def _fetch_aaa(self, cfg: Dict, gas_manager=None) -> Optional[Dict]:
@@ -356,6 +358,15 @@ class MarketIndicesManager:
         direction = gas.get('direction', 'flat')
         as_of     = gas.get('as_of', '')
         currency  = cfg.get('currency_sym', '$')
+
+        # Build sparkline: use 7-day rolling daily history if available,
+        # otherwise fall back to the 4-point AAA snapshot.
+        _gas_hist = (gas_manager.get_history()
+                     if gas_manager and hasattr(gas_manager, 'get_history') else [])
+        if len(_gas_hist) >= 2:
+            _sparkline = [e['price'] for e in _gas_hist if e.get('price') is not None]
+        else:
+            _sparkline = [v for v in [month_ago, week_ago, yesterday, current] if v is not None]
 
         return {
             'id':             cfg['id'],
@@ -381,13 +392,65 @@ class MarketIndicesManager:
             'next_open':      None,
             'futures':        None,
             'fetched_at':     gas.get('last_updated', ''),
-            # Build a simple trend sparkline from available AAA data points.
-            # month_ago → week_ago → yesterday → current gives a useful price trend.
-            'sparkline':      [v for v in [month_ago, week_ago, yesterday, current] if v is not None],
+            'sparkline':      _sparkline,
             'sparkline_open_frac': None,
             'aaa_as_of':      as_of,
             'aaa_source':     True,
         }
+
+    def _fetch_measles(self, cfg: Dict, measles_manager=None) -> Optional[Dict]:
+        """Build a tile dict from CDC measles tracker data."""
+        if measles_manager is None:
+            return self._cache.get(cfg['id'])
+        d = measles_manager.get_data()
+        if d.get('status') != 'ok':
+            return self._cache.get(cfg['id'])
+
+        cases      = d.get('cases')
+        change     = d.get('change') or 0
+        change_pct = d.get('change_pct') or 0.0
+        direction  = d.get('direction', 'flat')
+        as_of      = d.get('as_of', '')
+        if cases is None:
+            return self._cache.get(cfg['id'])
+
+        history    = measles_manager.get_history() if hasattr(measles_manager, 'get_history') else []
+        sparkline  = [e['cases'] for e in history if e.get('cases') is not None]
+        prev_cases = (cases - change) if change is not None else cases
+        first_cases = sparkline[0] if sparkline else cases
+
+        tile = {
+            'id':            cfg['id'],
+            'label':         cfg['label'],
+            'row':           cfg.get('row', 2),
+            'tooltip':       cfg.get('tooltip', ''),
+            'symbol':        'CDC',
+            'currency':      'USD',
+            'currency_sym':  '',
+            'price':         cases,
+            'open':          first_cases,
+            'prev_close':    prev_cases,
+            'day_high':      d.get('prior_cases'),
+            'day_low':       None,
+            'change':        change,
+            'change_pct':    change_pct,
+            'direction':     direction,
+            'is_open':       True,
+            'always_open':   True,
+            'always_futures': False,
+            'hide_countdown': True,
+            'time_to_close': None,
+            'next_open':     None,
+            'futures':       None,
+            'fetched_at':    d.get('last_updated', ''),
+            'sparkline':     sparkline,
+            'sparkline_open_frac': None,
+            'measles_source': True,
+            'measles_as_of':  as_of,
+            'measles_year':   d.get('year'),
+        }
+        self._cache[cfg['id']] = tile
+        return tile
 
     def _fetch_index(self, cfg: Dict) -> Optional[Dict]:
         """Fetch a single index from Yahoo Finance."""

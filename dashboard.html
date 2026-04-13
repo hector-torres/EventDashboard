@@ -392,13 +392,15 @@
     .panel:last-child { border-right: none; }
 
     .panel-header {
-      padding: 13px 20px;
+      padding: 0 20px;
+      height: 45px;
       border-bottom: 1px solid #1a1a1a;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
       background: #0d0d0d;
+      box-sizing: border-box;
     }
 
     .panel-title-group { display: flex; align-items: center; gap: 10px; flex: 1; justify-content: center; }
@@ -488,8 +490,70 @@
     .cbar.collapsed .cbar-body { display: none; }
 
     /* Spike bar legacy — wraps inside .cbar */
-    .spike-bar-empty {
-      font-size: 10px; color: #444; letter-spacing: 0.08em; font-style: italic;
+    /* ── Priority Events bar ─────────────────────────────────────── */
+    .prio-bar-empty {
+      font-size: 10px; color: #2a2a2a; letter-spacing: 0.06em; padding: 6px 12px;
+    }
+    .prio-add-row {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px 8px; border-top: 1px solid #151515;
+    }
+    .prio-input {
+      flex: 1; background: #111; border: 1px solid #222;
+      color: #bbb; font-size: 11px; padding: 3px 8px;
+      letter-spacing: 0.04em; outline: none;
+    }
+    .prio-input:focus { border-color: #444; }
+    .prio-add-btn {
+      background: #1a1a1a; border: 1px solid #333; color: #888;
+      font-size: 10px; padding: 3px 9px; cursor: pointer; letter-spacing: 0.08em;
+    }
+    .prio-add-btn:hover { background: #252525; color: #aaa; }
+    .prio-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: #141414; border: 1px solid #2a2a2a; color: #777;
+      font-size: 10px; letter-spacing: 0.06em; padding: 2px 7px 2px 8px;
+      margin: 3px 3px 0 0; cursor: default;
+    }
+    .prio-chip-x {
+      color: #444; font-size: 11px; cursor: pointer; line-height: 1; padding-left: 2px;
+    }
+    .prio-chip-x:hover { color: #cc3333; }
+    /* ── Pinned latest priority event ───────────────── */
+    #prio-pin {
+      display: none;
+      border-bottom: 2px solid rgba(180, 100, 0, 0.4);
+    }
+    #prio-pin.visible { display: block; }
+    .prio-pin-label {
+      font-size: 8px; font-weight: 700; letter-spacing: 0.18em;
+      text-transform: uppercase; color: #996600;
+      padding: 5px 14px 3px;
+      background: rgba(55, 35, 5, 0.85);
+      border-bottom: 1px solid rgba(120, 70, 0, 0.25);
+    }
+    /* The cloned event card inside the pin */
+    #prio-pin-card {
+      border-left: 3px solid #cc8800;
+      background: rgba(45, 28, 4, 0.6) !important;
+      margin: 0;
+      pointer-events: auto;
+    }
+    #prio-pin-card .event-sev-line { display: none; }
+
+    .event-item.prio-match {
+      background: rgba(60, 40, 10, 0.55) !important;
+    }
+    .event-item.prio-match .event-sev-line {
+      box-shadow: 0 0 6px rgba(220, 140, 0, 0.5);
+    }
+    .prio-match-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 8px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #cc8800;
+      height: 15px; line-height: 1; padding: 0 5px;
+      border: 1px solid rgba(200,120,0,0.35);
+      margin-left: 4px; flex-shrink: 0;
     }
 
     /* Keyword pill */
@@ -542,42 +606,6 @@
       letter-spacing: 0.08em;
       font-style: italic;
     }
-    .spike-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 2px 8px 2px 7px;
-      border-radius: 3px;
-      font-size: 11px;
-      font-weight: 500;
-      letter-spacing: 0.04em;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.12s;
-      border: 1px solid #2a1a00;
-      background: #141000;
-      color: #444;
-    }
-    .spike-chip.active {
-      border-color: #664400;
-      background: rgba(100,60,0,0.18);
-      color: #cc8800;
-    }
-    .spike-chip .chip-count {
-      font-size: 10px;
-      opacity: 0.6;
-    }
-    .spike-chip .chip-dot {
-      width: 5px; height: 5px;
-      border-radius: 50%;
-      background: currentColor;
-      opacity: 0.5;
-    }
-    .panel-btn.btn-active {
-      color: #cc8800; border-color: #553300;
-      background: rgba(90,50,0,0.15);
-    }
-
     .panel-btn.active {
       color: #cc8800;
       border-color: #664400;
@@ -975,9 +1003,11 @@
     .sev-CRITICAL { background: #cc0020; }
     /* P6: Event lifecycle status badges */
     .evt-status-badge {
-      display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
-      padding: 1px 5px; border-radius: 2px; margin-left: 6px; vertical-align: middle;
-      text-transform: uppercase;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+      height: 15px; line-height: 1; padding: 0 5px;
+      border-radius: 2px; margin-left: 6px;
+      text-transform: uppercase; flex-shrink: 0;
     }
     .evt-status-breaking  { background: rgba(204,0,32,0.18); color: #ff4455; border: 1px solid rgba(204,0,32,0.4); animation: blink-badge 1.4s ease-in-out infinite; }
     .evt-status-developing{ background: rgba(200,130,0,0.18); color: #ffaa33; border: 1px solid rgba(200,130,0,0.4); }
@@ -989,7 +1019,7 @@
 
     .event-top {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
       margin-bottom: 6px;
       gap: 8px;
@@ -1016,9 +1046,10 @@
     .event-header-val.unknown { color: #2a2a2a; font-style: italic; }
 
     .event-sev {
+      display: inline-flex; align-items: center; justify-content: center;
       font-size: 9px; font-weight: 700;
-      letter-spacing: 0.18em; text-transform: uppercase;
-      padding: 1px 5px; flex-shrink: 0;
+      height: 15px; line-height: 1; padding: 0 5px;
+      letter-spacing: 0.18em; text-transform: uppercase; flex-shrink: 0;
     }
 
     .sev-badge-CRITICAL { background: rgba(180,0,20,0.15);  color: #cc0020; border: 1px solid rgba(180,0,20,0.3); }
@@ -1461,17 +1492,31 @@
           <button class="panel-btn" onclick="clearEvents()">Clear</button>
         </div>
       </div>
-      <!-- Spiked keyword chip bar -->
-      <div class="cbar collapsed" id="spike-bar">
-        <div class="cbar-header" onclick="spikeToggleCollapse()">
-          <span class="cbar-arrow" id="spike-collapse-btn">▾</span>
-          <span class="cbar-label">Spikes</span>
-          <span class="cbar-count" id="spike-chip-count"></span>
+      <!-- Priority Events bar -->
+      <div class="cbar collapsed" id="prio-bar">
+        <div class="cbar-header" onclick="prioToggleCollapse()">
+          <span class="cbar-arrow" id="prio-collapse-btn">▾</span>
+          <span class="cbar-label">Priority Events</span>
+          <span class="cbar-count" id="prio-chip-count"></span>
         </div>
-        <div class="cbar-body" id="spike-body">
-          <span class="spike-bar-empty" id="spike-bar-empty">none in last 15m</span>
+        <div class="cbar-body" id="prio-body">
+          <div id="prio-chips">
+            <span class="prio-bar-empty" id="prio-bar-empty">no priorities set</span>
+          </div>
+          <div class="prio-add-row">
+            <input class="prio-input" id="prio-input"
+              placeholder="add keyword or phrase…"
+              onkeydown="if(event.key==='Enter') prioAdd()">
+            <button class="prio-add-btn" onclick="prioAdd()">+ add</button>
+          </div>
         </div>
       </div>
+      <!-- Pinned latest priority event -->
+      <div id="prio-pin">
+        <div class="prio-pin-label">★ latest priority event</div>
+        <div id="prio-pin-card"></div>
+      </div>
+
       <div class="panel-body" id="events-body">
         <div class="state-empty" id="events-empty">Monitoring for events…</div>
       </div>
@@ -1583,9 +1628,7 @@ let countdown     = POLL_SECS;
 let seenPostUris  = new Set();
 let seenEventIds  = new Set();
 // keyword chip state: Map<keyword, bool> true=visible
-const spikeKeywords   = new Map();
 const spikeDetectedAt = new Map();
-const SPIKE_WINDOW_MS = 15 * 60 * 1000;
 
 // ── Duplicate / repeat detection ─────────────────────────────────────────────
 // Rolling 4-hour window of post/event fingerprints for near-duplicate detection
@@ -1861,7 +1904,7 @@ function renderTile(idx) {
           ${statusHTML}
         </div>
         <div class="tile-change ${displayDir}">${sign}${fmt(displayPct)}%</div>
-        <div class="tile-price ${displayDir}">${sym}${fmt(displayPrice)}&ensp;<span style="font-size:10px;opacity:0.55">${sign}${fmt(displayChg)}</span></div>
+        <div class="tile-price ${displayDir}">${idx.measles_source ? '' : sym}${idx.measles_source ? displayPrice.toLocaleString() : fmt(displayPrice)}&ensp;<span style="font-size:10px;opacity:0.55">${idx.measles_source ? (sign + Math.abs(displayChg).toLocaleString() + ' cases') : sign + fmt(displayChg)}</span></div>
         ${closedNoteHTML}
       </div>
       <div style="width:100%">
@@ -1870,9 +1913,12 @@ function renderTile(idx) {
             ? `<div class="tile-meta-item">Yest: <strong>${sym}${fmt(idx.prev_close)}</strong></div>
                <div class="tile-meta-item">Wk: <strong>${sym}${fmt(idx.open)}</strong></div>
                <div class="tile-meta-item">Mo: <strong>${sym}${fmt(idx.day_low)}</strong></div>`
-            : `<div class="tile-meta-item">O: <strong>${sym}${fmt(idx.open)}</strong></div>
-               <div class="tile-meta-item">H: <strong>${sym}${fmt(idx.day_high)}</strong></div>
-               <div class="tile-meta-item">L: <strong>${sym}${fmt(idx.day_low)}</strong></div>`
+            : idx.measles_source
+              ? `<div class="tile-meta-item">YTD start: <strong>${idx.open?.toLocaleString() ?? '—'}</strong></div>
+                 <div class="tile-meta-item">2025: <strong>${idx.day_high?.toLocaleString() ?? '—'}</strong></div>`
+              : `<div class="tile-meta-item">O: <strong>${sym}${fmt(idx.open)}</strong></div>
+                 <div class="tile-meta-item">H: <strong>${sym}${fmt(idx.day_high)}</strong></div>
+                 <div class="tile-meta-item">L: <strong>${sym}${fmt(idx.day_low)}</strong></div>`
           }
         </div>
         <div class="tile-sparkline-wrap">${
@@ -2041,15 +2087,15 @@ function renderEvent(e) {
        </div>`
     : `<div class="event-title">${esc(e.title)}</div>`;
 
-  return `<div class="event-item" data-severity="${e.severity}" data-keyword="${e.keyword||''}" data-strategy="${e.strategy||''}" onclick="toggleEventExpand(this)">
+  return `<div class="event-item" data-severity="${e.severity}" data-keyword="${e.keyword||''}" data-strategy="${e.strategy||''}" data-who="${e.who||''}" data-what="${e.what||''}" data-where="${e.where||''}" onclick="toggleEventExpand(this)">
     <div class="event-sev-line sev-${e.severity}"></div>
     <div class="event-top">
       ${headerHTML}
       <div class="event-sev sev-badge-${e.severity}">${e.severity}</div>
-      ${e.status === 'breaking'   ? '<span class="evt-status-badge evt-status-breaking">🔴 NEW</span>'    : ''}
-      ${e.status === 'developing' ? '<span class="evt-status-badge evt-status-developing">🟡 Developing</span>' : ''}
-      ${e.status === 'stale'      ? '<span class="evt-status-badge evt-status-stale">⬜ Stale</span>'           : ''}
-      ${e.status === 'active'     ? '<span class="evt-status-badge evt-status-active">● Active</span>'         : ''}
+      ${e.status === 'breaking'   ? '<span class="evt-status-badge evt-status-breaking">NEW</span>'    : ''}
+      ${e.status === 'developing' ? '<span class="evt-status-badge evt-status-developing">Developing</span>' : ''}
+      ${e.status === 'stale'      ? '<span class="evt-status-badge evt-status-stale">Stale</span>'           : ''}
+      ${e.status === 'active'     ? '<span class="evt-status-badge evt-status-active">Active</span>'         : ''}
     </div>
     <div class="event-samples">${samples}</div>
     <div class="event-meta">
@@ -2119,6 +2165,7 @@ async function fetchEvents() {
   if (novel.length) {
     if (empty) empty.style.display = 'none';
     body.insertAdjacentHTML('afterbegin', novel.map(renderEvent).join(''));
+    if (typeof prioHighlightAll === 'function') { prioHighlightAll(); updatePrioPin(); }
     ingestSpikeEvents(novel);
     applyKeywordFilter();
   }
@@ -2159,51 +2206,143 @@ function clearEvents() {
     document.getElementById(id).textContent = '0');
 }
 
-// ── Keyword spike chip bar ────────────────────────────────────────────────────
+// ── Priority Events bar ──────────────────────────────────────────────────────
 
-function renderSpikeBar() {
-  const bar   = document.getElementById('spike-bar');
-  const empty = document.getElementById('spike-bar-empty');
-  const now   = Date.now();
-  for (const [kw, isoStr] of spikeDetectedAt.entries()) {
-    if (now - new Date(isoStr).getTime() > SPIKE_WINDOW_MS) {
-      spikeDetectedAt.delete(kw);
-      spikeKeywords.delete(kw);
+let prioCollapsed = true;
+let _prioKeywords = [];
+
+function prioToggleCollapse() {
+  prioCollapsed = !prioCollapsed;
+  const bar = document.getElementById('prio-bar');
+  const btn = document.getElementById('prio-collapse-btn');
+  if (bar) bar.classList.toggle('collapsed', prioCollapsed);
+  if (btn) btn.textContent = prioCollapsed ? '▾' : '▴';
+}
+
+async function prioLoad() {
+  try {
+    const r = await fetch('/api/priorities');
+    const d = await r.json();
+    _prioKeywords = d.priorities || [];
+    prioBuild();
+    prioHighlightAll();
+    updatePrioPin();
+  } catch(e) { console.warn('[Priorities] load failed:', e); }
+}
+
+function prioBuild() {
+  const chips = document.getElementById('prio-chips');
+  const empty = document.getElementById('prio-bar-empty');
+  const count = document.getElementById('prio-chip-count');
+  if (!chips) return;
+  chips.querySelectorAll('.prio-chip').forEach(el => el.remove());
+  if (_prioKeywords.length === 0) {
+    if (empty) empty.style.display = '';
+    if (count) count.textContent = '';
+  } else {
+    if (empty) empty.style.display = 'none';
+    if (count) count.textContent = _prioKeywords.length;
+    _prioKeywords.forEach(kw => {
+      const chip = document.createElement('span');
+      chip.className = 'prio-chip';
+      const kwSafe = kw.replace(/'/g, "\'");
+      chip.innerHTML =
+        `<span>${esc(kw)}</span><span class="prio-chip-x" onclick="prioRemove('${kwSafe}')">✕</span>`;
+      chips.insertBefore(chip, chips.querySelector('.prio-bar-empty'));
+    });
+  }
+}
+
+async function prioAdd() {
+  const input = document.getElementById('prio-input');
+  if (!input) return;
+  const kw = input.value.trim().toLowerCase();
+  if (!kw) return;
+  try {
+    const r = await fetch('/api/priorities', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({keyword: kw})
+    });
+    const d = await r.json();
+    _prioKeywords = d.priorities || [];
+    prioBuild();
+    prioHighlightAll();
+    updatePrioPin();
+    input.value = '';
+  } catch(e) { console.warn('[Priorities] add failed:', e); }
+}
+
+async function prioRemove(kw) {
+  try {
+    const r = await fetch('/api/priorities/' + encodeURIComponent(kw), {method: 'DELETE'});
+    const d = await r.json();
+    _prioKeywords = d.priorities || [];
+    prioBuild();
+    prioHighlightAll();
+    updatePrioPin();
+  } catch(e) { console.warn('[Priorities] remove failed:', e); }
+}
+
+function updatePrioPin() {
+  const pin     = document.getElementById('prio-pin');
+  const pinCard = document.getElementById('prio-pin-card');
+  if (!pin || !pinCard) return;
+  if (!_prioKeywords.length) { pin.classList.remove('visible'); return; }
+
+  // Walk DOM-order events (newest first) — prefer visible matches, fall back to hidden
+  const allItems = document.querySelectorAll('#events-body .event-item');
+  let best = null;
+  for (const el of allItems) {
+    if (el.classList.contains('prio-match') && el.style.display !== 'none') { best = el; break; }
+  }
+  if (!best) {
+    for (const el of allItems) {
+      if (el.classList.contains('prio-match')) { best = el; break; }
     }
   }
-  const body2 = document.getElementById('spike-body');
-  if (body2) body2.querySelectorAll('.spike-chip').forEach(el => el.remove());
-  bar.querySelectorAll('.spike-chip').forEach(el => el.remove());
-  if (spikeKeywords.size === 0) {
-    if (empty) empty.style.display = '';
-    updateEventsCount();
-    return;
-  }
-  if (empty) empty.style.display = 'none';
-  const kwCounts = {};
-  document.querySelectorAll('#events-body .event-item[data-keyword]').forEach(el => {
-    const kw = el.dataset.keyword;
-    if (kw) kwCounts[kw] = (kwCounts[kw] || 0) + 1;
-  });
-  for (const [kw, active] of spikeKeywords.entries()) {
-    const count = kwCounts[kw] || 0;
-    const chip  = document.createElement('span');
-    chip.className  = 'spike-chip' + (active ? ' active' : '');
-    chip.dataset.kw = kw;
-    chip.title      = (active ? 'Hide' : 'Show') + ' "' + kw + '" events';
-    chip.innerHTML  = '<span class="chip-dot"></span>' + esc(kw) + '<span class="chip-count">' + count + '</span>';
-    chip.onclick    = () => toggleSpikeKeyword(kw);
-    const target = document.getElementById('spike-body') || bar;
-    target.insertBefore(chip, target.querySelector('.spike-bar-empty'));
-  }
-  updateEventsCount();
+  if (!best) { pin.classList.remove('visible'); return; }
+
+  // Clone the full card into the pin — so it shows everything: header, samples, meta
+  const clone = best.cloneNode(true);
+  clone.id = 'prio-pin-card';
+  clone.classList.remove('prio-match');   // don't double-tint
+  clone.style.display = '';              // ensure visible even if MEDIUM was hidden
+
+  // Remove the ★ priority badge from the clone (it's already in a priority context)
+  clone.querySelectorAll('.prio-match-badge').forEach(b => b.remove());
+
+  // Make expand button work on the clone too
+  clone.onclick = function() { toggleEventExpand(this); };
+
+  // Replace whatever was there before
+  pinCard.replaceWith(clone);
+
+  pin.classList.add('visible');
 }
 
-function toggleSpikeKeyword(kw) {
-  spikeKeywords.set(kw, !spikeKeywords.get(kw));
-  applyKeywordFilter();
-  renderSpikeBar();
+function prioHighlightAll() {
+  document.querySelectorAll('.event-item').forEach(el => {
+    const haystack = [
+      el.dataset.who || '', el.dataset.what || '',
+      el.dataset.where || '', el.dataset.keyword || '',
+      el.querySelector('.event-header-what, .event-title')?.textContent || ''
+    ].join(' ').toLowerCase();
+    const match = _prioKeywords.length > 0 && _prioKeywords.some(p => haystack.includes(p));
+    el.classList.toggle('prio-match', match);
+    let badge = el.querySelector('.prio-match-badge');
+    if (match && !badge) {
+      badge = document.createElement('span');
+      badge.className = 'prio-match-badge';
+      badge.textContent = '★ priority';
+      const top = el.querySelector('.event-top');
+      if (top) top.appendChild(badge);
+    } else if (!match && badge) {
+      badge.remove();
+    }
+  });
 }
+
 
 let showMedium = false;  // MEDIUM events hidden by default
 
@@ -2217,13 +2356,8 @@ function toggleMedium() {
 function applyKeywordFilter() {
   document.querySelectorAll('#events-body .event-item').forEach(el => {
     const sev = el.dataset.severity || '';
-    const isSpike = el.dataset.strategy === 'velocity_spike' && el.dataset.keyword;
-
     if (sev === 'MEDIUM' && !showMedium) {
-      // Always hide MEDIUM events (including spikes) when showMedium is off
       el.style.display = 'none';
-    } else if (isSpike) {
-      el.style.display = spikeKeywords.get(el.dataset.keyword) ? '' : 'none';
     } else {
       el.style.display = '';
     }
@@ -2237,24 +2371,18 @@ function updateEventsCount() {
 }
 
 function ingestSpikeEvents(events) {
-  let changed = false;
+  // Spike bar replaced by Priority Events bar — just track timing for spikeDetectedAt
   events.forEach(e => {
     if (e.strategy === 'velocity_spike' && e.keyword) {
-      if (!spikeKeywords.has(e.keyword)) {
-        spikeKeywords.set(e.keyword, true);
-        changed = true;
-      }
       spikeDetectedAt.set(e.keyword, e.detected_at || new Date().toISOString());
     }
   });
-  if (changed) renderSpikeBar();
 }
 
 // ── Init ──────────────────────────────────────────────
 fetchAll();
 fetchMarkets();
 setInterval(fetchMarkets, 60000);
-setInterval(renderSpikeBar, 30000);
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2333,18 +2461,6 @@ function sf3IngestPosts(newSearchPosts) {
   // Prepend new posts, cap at 120
   sf3AllPosts = [...newSearchPosts, ...sf3AllPosts].slice(0, 120);
   sf3Rerender();
-}
-
-// ── Spike bar collapse ────────────────────────────────────────────────────────
-let spikeCollapsed = true;
-function spikeToggleCollapse() {
-  spikeCollapsed = !spikeCollapsed;
-  const bar   = document.getElementById('spike-bar');
-  const count = document.getElementById('spike-chip-count');
-  if (!bar) return;
-  bar.classList.toggle('collapsed', spikeCollapsed);
-  const n = bar.querySelectorAll('.spike-chip').length;
-  if (count) count.textContent = n ? `(${n})` : '';
 }
 
 // ── Accounts bar ─────────────────────────────────────────────────────────────
@@ -3589,6 +3705,7 @@ document.addEventListener('keydown', e => {
               if (shown) {
                 if (typeof fetchAll    === 'function') fetchAll();
                 if (typeof kLoadSeries === 'function') kLoadSeries(1);
+                if (typeof prioLoad    === 'function') prioLoad();
               }
             }, 600);
           }
@@ -3607,6 +3724,7 @@ document.addEventListener('keydown', e => {
     if (!resolvedImmediately) {
       pollTimer = setInterval(checkLoaded, POLL_MS);
     }
+    if (typeof prioLoad === 'function') prioLoad();
   })();
   </script>
 </body>

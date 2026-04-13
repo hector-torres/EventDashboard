@@ -1,4 +1,4 @@
-# Event Trading Terminal — v2.0
+# Event Trading Terminal — v3.0
 **KLTT Holdings** | Internal research tool
 
 Real-time event detection and market intelligence terminal. Monitors Bluesky for breaking news, detects developing events through NLP and velocity analysis, surfaces relevant Kalshi prediction markets, and provides a live market detail view with Polymarket comparison.
@@ -21,7 +21,10 @@ Real-time event detection and market intelligence terminal. Monitors Bluesky for
 12. [Market Detail Page](#market-detail-page)
 13. [Market Indices Bar](#market-indices-bar)
 14. [Gas Prices (AAA)](#gas-prices-aaa)
-15. [API Reference](#api-reference)
+15. [Measles Tracker](#measles-tracker)
+16. [Priority Events](#priority-events)
+17. [Production Logging](#production-logging)
+18. [API Reference](#api-reference)
 16. [Setup & Running](#setup--running)
 17. [Configuration & Tuning](#configuration--tuning)
 18. [Known Limitations / Future Work](#known-limitations--future-work)
@@ -46,8 +49,8 @@ Title bar on all pages: **Event Trading Terminal** brand (16px bold) → nav lin
 | Panel | Contents |
 |-------|---------|
 | **News Accounts** | Live feed from tracked priority accounts. Collapsible **Tracked Accounts** bar (add/remove, persists to `accounts.txt`). |
-| **Detected Events** | Events CRITICAL→HIGH→MEDIUM. Each card shows a two-line header: `[what] <event>` on line 1, `[who]` · `[where]` · `[when]` on line 2 (bracket labels always shown; "unknown" when not extractable). Collapsible **Spikes** bar. |
-| **Keyword Sweep** | Broad keyword search feed. Collapsible **Keywords** bar (add/pause/remove, persists to `custom_feeds.json`). Noise Filter slider. |
+| **Detected Events** | Events CRITICAL→HIGH→MEDIUM. Each card shows a two-line header: `[what] <event>` on line 1, `[who]` · `[where]` · `[when]` on line 2 (bracket labels always shown; "unknown" when not extractable). Collapsible **Priority Events** bar (add keywords/phrases to highlight and pin matching events). Latest matching event always pinned as a full card between the bar and the event list. |
+| **Keyword Sweep** | Broad keyword search feed. Collapsible **Keywords** bar (add/pause/remove, persists to `keywords.json`). Noise Filter slider. |
 
 All collapsible bars use the shared `.cbar` CSS system: `.cbar` → `.cbar-header` → `.cbar-arrow` + `.cbar-label` + `.cbar-count`, and `.cbar-body`. Collapse rotates arrow; count always visible.
 
@@ -115,18 +118,19 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 
 | File | Role |
 |------|------|
-| `app.py` | Flask routes, poll thread, corpus builder, live market + Polymarket routes |
+| `app.py` | Flask routes, poll thread, corpus builder, live market + Polymarket routes; production logging config |
 | `bluesky_feed.py` | AT Protocol client, feed management, `keywords.json` persistence |
 | `post_scorer.py` | Modular noise scoring (11 active filters, incl. F14 topical relevance) |
 | `event_detector.py` | Event detection strategies, quality gates v2.1, semantic title generation, structured event components |
 | `nlp_enhancer.py` | NER, negation, semantic dedup, zero-shot, historical reference detection |
 | `kalshi_feed.py` | Kalshi API, market cache, semantic scoring, hourly refresh, fetch progress |
-| `market_indices.py` | Yahoo Finance + AAA index polling |
-| `gas_prices.py` | AAA gas price scraper |
+| `market_indices.py` | Yahoo Finance + AAA index polling; Measles tile; CME Globex weekend awareness |
+| `gas_prices.py` | AAA gas price scraper + rolling 7-day daily history |
 | `dashboard.html` | Event Dashboard UI |
 | `markets.html` | Market Dashboard UI |
 | `market_detail.html` | Live market detail page — two-column layout, three prediction market comparisons, paginated siblings |
 | `index.html` | Landing page |
+| `measles_tracker.py` | CDC measles YTD case count scraper + rolling 7-week weekly history |
 | `static/kltt-logo.png` | Brand logo — served at `/static/kltt-logo.png`; drop file in `static/` subfolder |
 
 **Persistence files:**
@@ -135,6 +139,9 @@ Collapsible `ⓘ` glossaries on Pricing, Order Book, Price Chart, Position Sizer
 |------|---------|
 | `accounts.txt` | Tracked Bluesky handles (one per line, `#` comments preserved) |
 | `keywords.json` | All keyword search feeds (built-in + custom) — authoritative source. FEED_CONFIG in `bluesky_feed.py` is used only to bootstrap this file on first run. |
+| `data/priorities.json` | Priority event keywords, saved by Priority Events bar UI |
+| `data/gasoline_history.json` | Rolling 7-day daily gas prices (one entry per UTC date) |
+| `data/measles_history.json` | Rolling 7-week CDC measles case counts (one entry per ISO week) |
 
 ---
 
@@ -398,6 +405,58 @@ This means closed markets (S&P on Saturday, Brent on Sunday, etc.) still show Fr
 
 ---
 
+## Measles Tracker
+
+**File:** `measles_tracker.py` | Updates weekly — Thursday 14:00 UTC (2h after CDC noon update).
+
+Scrapes the CDC measles data page at `https://www.cdc.gov/measles/data-research/index.html`. The data table cells are JavaScript-rendered and blank in raw HTTP responses; the cumulative case count is instead extracted from prose text using `_CASE_PATTERNS` regex (pattern: "As of [date], X confirmed measles cases were reported in the United States in [year]").
+
+| Field | Description |
+|-------|-------------|
+| `cases` | Cumulative YTD confirmed cases (int) |
+| `change` | Week-over-week new cases |
+| `change_pct` | Week-over-week % change |
+| `direction` | `up` / `down` / `flat` |
+| `as_of` | Date string from CDC prose (e.g. "March 5, 2026") |
+| `prior_cases` | Full-year total for prior year (for tile meta row) |
+| `history` | Rolling 7-week list `[{week, date, cases}, ...]` (for sparkline) |
+
+The tile in the market bar displays: current YTD count (no `$`), week-over-week change with "cases" suffix, sparkline from weekly history, and a meta row showing "YTD start:" (first history entry) and "2025 total:" (prior year total).
+
+---
+
+## Priority Events
+
+**Persistence:** `data/priorities.json` — flat list of lowercase keyword/phrase strings, written on every add/remove via the UI.
+
+**Matching:** `prioHighlightAll()` runs after every event render and keyword change. For each `.event-item` it builds a haystack from `data-who`, `data-what`, `data-where`, `data-keyword`, and the card's title text, then checks if any priority keyword appears as a substring. Matches receive an amber background tint (`.event-item.prio-match`) and a `★ priority` badge.
+
+**Priority pin (`#prio-pin`):** Sits between the Priority Events cbar and the main `events-body`. Hidden when no priorities are set or no events match. When a match exists, `updatePrioPin()` walks DOM-order events (newest first), preferring visible events but falling back to MEDIUM-hidden ones, and clones the full matching event card — including sample post text, source handles, age, and the `▼ expand` button — into the pin. Updates on every render cycle and on every keyword add/remove.
+
+**API routes:**
+```
+GET    /api/priorities              List all priority keywords
+POST   /api/priorities              Add keyword — body: {keyword: str}
+DELETE /api/priorities/<keyword>    Remove keyword
+```
+
+---
+
+## Production Logging
+
+**File:** `app.py` | Controlled by `PRODUCTION` environment variable.
+
+Set `PRODUCTION=true` in your `.env` file (project root) to suppress all `INFO`-level log messages. Only `WARNING` and `ERROR` messages will appear. Remove or set `PRODUCTION=false` to restore full logging.
+
+```
+# .env
+PRODUCTION=true
+```
+
+All modules use Python's `logging` module with a shared root logger configured at startup by `app.py`. Third-party loggers (`werkzeug`, `urllib3`, `requests`, `httpx`) are suppressed to `WARNING` regardless of the `PRODUCTION` flag — Flask's per-request logs do not appear in either mode. The two startup banner `print()` calls always appear regardless of log level.
+
+---
+
 ## API Reference
 
 ```
@@ -423,6 +482,12 @@ POST /api/accounts/reload               Reload from accounts.txt
 # Market Data
 GET  /api/markets            Yahoo Finance + AAA indices
 GET  /api/gas                AAA gas prices (all grades + direction)
+GET  /api/measles            CDC measles YTD cases + weekly history
+
+# Priority Events
+GET    /api/priorities           List all priority keywords
+POST   /api/priorities           Add keyword {keyword: str}
+DELETE /api/priorities/<keyword> Remove keyword
 GET  /api/kalshi/status      Cache status, market count, last updated, refresh state,
                                fetch_pages + fetch_running (live during pull)
 GET  /api/kalshi/series      Series list (params: category, q)
@@ -488,6 +553,7 @@ Kalshi data loads in background from SQLite (`data/kalshi.db`), created automati
 |----------|---------|--------|
 | `ACCOUNTS_FILE` | `accounts.txt` | Tracked handles |
 | `KEYWORDS_FILE` | `keywords.json` | All keyword feeds — authoritative source |
+| `PRODUCTION` (env) | `false` | Set `true` in `.env` to suppress INFO logs |
 | `MAX_CACHED_POSTS` | 150 | Posts in memory |
 
 **Default feeds (11) — bootstrapped into `keywords.json` on first run:**
@@ -589,7 +655,7 @@ All keyword feeds — both built-in and user-added — are stored as a flat JSON
 - **Event card [who]/[where] accuracy:** `_extract_semantic_title` uses word-list entity extraction when spaCy is unavailable. Actor/target order can be inverted in posts where a demonym appears before the country name. spaCy dependency parsing would improve this.
 - **F14 `_SIGNAL_VOCAB` coverage:** The vocabulary is manually curated. New feed topics outside the current set (entertainment, sports, etc.) would need vocab additions to avoid false hides.
 - **Sparkline 5d fallback — daily maintenance break:** CME Globex has a ~1h maintenance break every day around 17:00–18:00 ET. During this window, both the 1d and 5d fetches may return empty/partial data. The sparkline will be blank for that hour on weekdays.
-- **Gasoline sparkline resolution:** AAA provides only 4 data points (current, yesterday, week ago, month ago). The sparkline is directionally useful but has no intraday resolution.
+- **Gasoline sparkline resolution:** The sparkline uses daily closing prices (up to 7 days). AAA updates 3×/day so each day's entry is the last value fetched that day. No intraday resolution.
 
 ---
 
@@ -607,3 +673,4 @@ All keyword feeds — both built-in and user-added — are stored as a flat JSON
 | v1.7 | **Market Detail page redesign**: two-column layout (`ctx-sizer-cols` for context+sizer side-by-side, `inner-cols` for chart+orderbook side-by-side); three prediction market comparison panels side-by-side (`comparisons-cols` — Polymarket, Manifold, Metaculus); Matched Events + Posts in `matches-cols` full-width grid; siblings table paginated (10 per page, Prev/Next nav); price chart fixed (`close_dollars` field, was silently returning null); Order Book header moved inside bordered box. **Manifold + Metaculus**: new `/api/manifold/match` and `/api/metaculus/match` routes; `buildManifold` + `buildMetaculus` JS functions; all three comparisons fetched in parallel on page load. **Polymarket**: closed markets filtered from comparison results. **Dual Kalshi API**: `kalshi_feed.py` now fetches from both `api.elections.kalshi.com` and `trading-api.kalshi.com` and merges by ticker — covers weather/temperature and other non-election markets previously missing. `/api/kalshi/market/<ticker>` also tries both domains. **Category name fix**: `_infer_category` corrected `'Climate'` → `'Climate and Weather'` and `'Tech & Science'` → `'Science and Technology'` to match `CANONICAL_CATS`. **All Markets search redesign**: search bar moved to top of column (aligns with Confidence slider in col 2); filter priority enforced — category primary, series secondary, search tertiary; `mpBuildSearchSeriesList` fetches all matching series in one background call (stable across pagination); `mpSelectCat` preserves search query and re-scopes it; `mpSelectSeries` clears search on drill-down. **Search expanded**: matches `series_ticker` + `event_ticker` in addition to title/subtitle/ticker. **`_LOCATION_ALIASES`**: 40+ city-name → Kalshi location-code mappings so searching "san antonio" finds `KXHIGHTSATX` markets. |
 | v1.6 | **Feed enabled fix**: `bluesky_feed.py` fetch loop now respects the `enabled` flag — disabled feeds are skipped at fetch time (was only persisted, not enforced). **FEED_CONFIG restructured**: 8 → 11 atomic feeds; format-label feeds removed (`just in`, `developing story`, `flash alert`); ambiguous queries split and quoted (`"rate hike"`, `"market crash"`, `"breaking news"`, `"declared emergency"`, `"interest rate"`, `"fed reserve"`). **Source weights**: 16 accounts from `accounts.txt` now explicitly weighted in `SOURCE_TIER_WEIGHTS`; `fintwitter` promoted to 3; `ms.now` (MSNBC) added at 2. **Breaking: phrases removed**: `breaking:`, `breaking --`, `breaking —` removed from CRITICAL triggers — were matching any post opening with "BREAKING:" regardless of content. `breaking` bare word added to `ENTITY_REQUIRED_WORDS` + threshold 5. `ENTITY_REQUIRED_PHRASES` added for format-label phrases. **VelocitySpikeStrategy improvements**: dim/hide skip at ingest; per-word historical reference filter at ingest; `_spike_entity_coherent` gate (entity coherence across posts); semantic titles via `_generate_spike_title` reusing `_extract_semantic_title`. **F14 TopicalRelevanceFilter**: new `post_scorer.py` filter; posts with zero words from `_SIGNAL_VOCAB` (~120 news/event terms) receive +3 (hide). **Structured event components**: `_extract_semantic_title` returns `{who, what, where}` dict; all three strategies store components on event objects. **Event card redesign**: two-line header — `[what]` on line 1; `[who]` · `[where]` · `[when]` on line 2 with bracket labels; "unknown" shown in muted italic when unavailable. **Noise filter default**: keyword sweep hide threshold lowered 5 → 3. **Logo**: KLTT Holdings text replaced with `kltt-logo.png` on all three pages (drop in `EventDashboard/static/`). **Updated panel**: market bar "Updated" text now vertical, inward-facing, single line showing "Updated · Xm ago". **Collapsible bars**: Tracked Accounts, Spikes, Keywords bars now default to collapsed on startup. **Dashboard overlay**: Event Dashboard loading overlay replaced with full step-indicator + page-counter version matching Market Dashboard. **Bug fixes**: overlay `pollTimer` race fixed on both dashboards (both `resolvedImmediately` + `shown` guards); `_generate_spike_title` dict handling; `ZeroShotStrategy` stale variable references (`pseudo_cluster`, `sorted_c`); `self._extract_semantic_title` called on wrong class in spike/zero-shot strategies. |
 | v2.0 | **`[what]` label on event cards**: event card line 1 now shows `[what]` bracket label inline with the event text, consistent with `[who]`/`[where]`/`[when]` on line 2. **`keywords.json` authoritative feed source**: `bluesky_feed.py` now uses `keywords.json` (flat list of all feeds) instead of the old `custom_feeds.json` (which only stored deltas). `FEED_CONFIG` is used only to bootstrap the file on first run; all subsequent reads and writes go through `keywords.json`. Automatic migration from `custom_feeds.json` on first startup. **Market indices overhaul** (`market_indices.py`): CME Globex weekend closure detection (`_is_cme_globex_open`, `_cme_globex_next_open`) — equity futures return `null` during Fri 17:00→Sun 18:00 ET window instead of stale 0.00% data; always-futures tiles (Brent/WTI/NatGas) show `CLOSED` badge + countdown during the same window; `hide_countdown` overridden for always-futures when closed. **Sparkline fallback**: 5-day fallback fetch when 1d returns empty (weekend/holiday) — shows previous trading day's full chart. **Gasoline sparkline**: 4-point trend built from AAA data (month_ago → week_ago → yesterday → current). **Dashboard hardening**: logo `<img>` restored on all three pages after regression; noise filter default confirmed at 3; `spikeCollapsed`/`acctCollapsed`/`sf3KwCollapsed` confirmed defaulting to `true` with `collapsed` class baked into HTML. **Event card who/what/where subheaders**: `renderEvent` in `dashboard.html` now renders a two-line header using the structured `who`/`what`/`where` fields from the event object — `[what]` on line 1, `[who]`·`[where]`·`[when]` on line 2 with bracket labels and muted "unknown" fallback. **Regression fixes**: overlay `pollTimer` and `shown` guards re-verified; `market-updated-combined` vertical panel size corrected to match sidebar label weight; `always_futures` `next_open` unblocked from `hide_countdown` suppression. |
+| v3.0 | **Priority Events bar**: replaces Spikes bar in Detected Events panel. Add keywords/phrases to highlight matching events (amber tint + `★ priority` badge). Keywords persist to `data/priorities.json` via `/api/priorities`. **Priority pin**: full latest-match event card (with sample posts, meta row, expand button) pinned between the Priority Events bar and the event list — always shows most recent priority hit even when MEDIUM events are hidden. **Measles tracker** (`measles_tracker.py`, new): replaces BTC-USD tile; scrapes CDC measles page weekly; rolling 7-week history in `data/measles_history.json`; tile shows YTD case count + wow change + weekly sparkline. **Gasoline 7-day sparkline**: `gas_prices.py` now records one daily snapshot to `data/gasoline_history.json`; `market_indices._fetch_aaa()` uses 7-day history for sparkline when ≥2 points available. **Production logging**: `PRODUCTION=true` in `.env` sets root logger to WARNING-only; all `print()` calls converted to `logger.info/warning` across `app.py`, `bluesky_feed.py`, `market_indices.py`. **Badge sizing**: all event card badges locked to `height: 15px; display: inline-flex`; emojis removed from status badges. **Panel header alignment**: `.panel-header` fixed at `height: 45px` so all three panels align perfectly. |

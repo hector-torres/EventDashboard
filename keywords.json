@@ -1,0 +1,18 @@
+[
+  {
+    "id": "explosion",
+    "name": "Explosion/Attack",
+    "type": "search",
+    "query": "explosion attack strike",
+    "limit": 20,
+    "enabled": true
+  },
+  {
+    "id": "geopolitical",
+    "name": "Geopolitical",
+    "type": "search",
+    "query": "missile invasion sanctions",
+    "limit": 20,
+    "enabled": true
+  }
+]

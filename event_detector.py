@@ -34,15 +34,18 @@ from collections import defaultdict
 from typing import List, Dict, Optional
 import re
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 # NLP enhancement layer (spaCy optional — degrades gracefully without it)
 try:
     from nlp_enhancer import get_enhancer as _get_nlp
     _nlp = _get_nlp()
-    print(f"[EventDetector] NLP enhancer loaded: {_nlp.describe()}")
+    logger.info("[EventDetector] NLP enhancer loaded: %s", _nlp.describe())
 except ImportError:
     _nlp = None
-    print("[EventDetector] nlp_enhancer not found — NLP features disabled")
+    logger.warning("[EventDetector] nlp_enhancer not found — NLP features disabled")
 
 # ─── Breaking News Keywords ──────────────────────────────────────────────────
 BREAKING_KEYWORDS = {
@@ -1225,11 +1228,11 @@ class EventDetector:
                 new = strategy.analyze(posts, self._events)
                 all_new.extend(new)
             except Exception as e:
-                print(f"[EventDetector] Strategy '{strategy.name}' error: {e}")
+                logger.warning("[EventDetector] Strategy '%s' error: %s", strategy.name, e)
 
         if all_new:
             self._events = (all_new + self._events)[:MAX_EVENTS]
-            print(f"[EventDetector] {len(all_new)} new event(s) detected.")
+            logger.info("[EventDetector] %d new event(s) detected.", len(all_new))
 
         for ev in self._events:
             ev['status'] = _compute_event_status(ev.get('detected_at', ''))

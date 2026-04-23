@@ -1724,13 +1724,24 @@ setInterval(() => {
 }, 1000);
 
 // ── Helpers ───────────────────────────────────────────
+function tzOffset() {
+  // Returns offset string like '+0500' or '-0600'
+  const off = -new Date().getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const h = String(Math.floor(Math.abs(off) / 60)).padStart(2, '0');
+  const m = String(Math.abs(off) % 60).padStart(2, '0');
+  return sign + h + m;
+}
+
 function relTime(iso) {
   if (!iso) return '';
   const d = (Date.now() - new Date(iso)) / 1000;
-  if (d < 60)    return Math.round(d) + 's ago';
-  if (d < 3600)  return Math.round(d / 60) + 'm ago';
-  if (d < 86400) return Math.round(d / 3600) + 'h ago';
-  return new Date(iso).toLocaleDateString();
+  if (d < 60)   return Math.round(d) + 's ago';
+  if (d < 3600) return Math.round(d / 60) + 'm ago';
+  // >= 1h: show local timestamp with tz offset
+  const dt = new Date(iso);
+  const ts = dt.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+  return ts + ' ' + tzOffset();
 }
 
 function esc(s) {
@@ -1828,6 +1839,8 @@ function renderTile(idx) {
   let statusHTML;
   if (idx.aaa_source) {
     statusHTML = `<span class="tile-status status-open" title="Source: AAA gasprices.aaa.com · as of ${idx.aaa_as_of || 'today'}">AAA</span>`;
+  } else if (idx.measles_source) {
+    statusHTML = `<span class="tile-status status-open" title="Source: CDC · Updated weekly (Thursdays)">CDC</span>`;
   } else if (idx.always_open) {
     statusHTML = `<span class="tile-status status-open">24/7</span>`;
   } else if (idx.always_futures) {
@@ -1914,8 +1927,9 @@ function renderTile(idx) {
                <div class="tile-meta-item">Wk: <strong>${sym}${fmt(idx.open)}</strong></div>
                <div class="tile-meta-item">Mo: <strong>${sym}${fmt(idx.day_low)}</strong></div>`
             : idx.measles_source
-              ? `<div class="tile-meta-item">YTD start: <strong>${idx.open?.toLocaleString() ?? '—'}</strong></div>
-                 <div class="tile-meta-item">2025: <strong>${idx.day_high?.toLocaleString() ?? '—'}</strong></div>`
+              ? `<div class="tile-meta-item">YTD: <strong>${idx.price?.toLocaleString() ?? '—'}</strong></div>
+                 <div class="tile-meta-item">Wk: <strong>${idx.prev_close?.toLocaleString() ?? '—'}</strong></div>
+                 <div class="tile-meta-item">Mo: <strong>${idx.open?.toLocaleString() ?? '—'}</strong></div>`
               : `<div class="tile-meta-item">O: <strong>${sym}${fmt(idx.open)}</strong></div>
                  <div class="tile-meta-item">H: <strong>${sym}${fmt(idx.day_high)}</strong></div>
                  <div class="tile-meta-item">L: <strong>${sym}${fmt(idx.day_low)}</strong></div>`
@@ -2072,7 +2086,9 @@ function renderEvent(e) {
   const whatText = e.what  || esc(e.title);
   const whoVal   = e.who   || null;
   const whereVal = e.where || null;
-  const whenVal  = relTime(e.detected_at);
+  const whenVal  = e.detected_at
+    ? new Date(e.detected_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) + ' ' + tzOffset()
+    : '';
 
   const metaItems = [
     whoVal   ? `<span><span class="event-header-lbl">[who]</span><span class="event-header-val">${esc(whoVal)}</span></span>`   : `<span><span class="event-header-lbl">[who]</span><span class="event-header-val unknown">unknown</span></span>`,
@@ -2087,7 +2103,7 @@ function renderEvent(e) {
        </div>`
     : `<div class="event-title">${esc(e.title)}</div>`;
 
-  return `<div class="event-item" data-severity="${e.severity}" data-keyword="${e.keyword||''}" data-strategy="${e.strategy||''}" data-who="${e.who||''}" data-what="${e.what||''}" data-where="${e.where||''}" onclick="toggleEventExpand(this)">
+  return `<div class="event-item" data-severity="${e.severity}" data-keyword="${e.keyword||''}" data-strategy="${e.strategy||''}" data-who="${e.who||''}" data-what="${e.what||''}" data-where="${e.where||''}" data-event-id="${e.id||e.keyword||''}" data-detected-at="${e.detected_at||''}" onclick="toggleEventExpand(this)">
     <div class="event-sev-line sev-${e.severity}"></div>
     <div class="event-top">
       ${headerHTML}
@@ -2209,6 +2225,7 @@ function clearEvents() {
 // ── Priority Events bar ──────────────────────────────────────────────────────
 
 let prioCollapsed = true;
+let _lastNotifiedId = null;   // dedup: don't re-notify the same event_id
 let _prioKeywords = [];
 
 function prioToggleCollapse() {
@@ -2319,6 +2336,52 @@ function updatePrioPin() {
   pinCard.replaceWith(clone);
 
   pin.classList.add('visible');
+
+  // ── Pushover notification ──────────────────────────────────────────────────
+  // Fire for CRITICAL or HIGH priority matches only. Dedup by event id so
+  // repeated 30s polls don't spam. Server also deduplicates as a backstop.
+  const sev     = best.dataset.severity || '';
+  const eventId = best.dataset.eventId  || best.dataset.keyword || '';
+  if ((sev === 'CRITICAL' || sev === 'HIGH') && eventId && eventId !== _lastNotifiedId) {
+    _lastNotifiedId = eventId;
+
+    // ── Title: what value ─────────────────────────────────────────────
+    const whatRaw  = best.dataset.what || best.dataset.keyword || '';
+    const whatEl   = best.querySelector('.event-header-what, .event-title');
+    const whatText = whatRaw || (whatEl ? whatEl.textContent.replace('[what]','').trim() : 'Priority Event');
+
+    // ── Body line 1: who · where · when ──────────────────────────────
+    const who   = best.dataset.who   || '';
+    const where = best.dataset.where || '';
+    const detectedAt = best.dataset.detectedAt || '';
+    const when = detectedAt
+      ? new Date(detectedAt).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) + ' ' + tzOffset()
+      : '';
+    const metaParts = [];
+    if (who)   metaParts.push('[WHO]: ' + who);
+    if (where) metaParts.push('[WHERE]: ' + where);
+    if (when)  metaParts.push('[WHEN]: ' + when);
+    const metaLine = metaParts.join(' · ');
+
+    // ── Body line 2+: sample post text ───────────────────────────────
+    const samples = [...best.querySelectorAll('.event-sample')]
+      .map(el => el.textContent.trim()).filter(Boolean);
+
+    const bodyParts = [];
+    bodyParts.push('[WHAT]: ' + whatText);
+    if (metaLine) bodyParts.push(metaLine);
+    if (samples.length) {
+      bodyParts.push('');
+      samples.slice(0, 2).forEach(s => bodyParts.push(s.slice(0, 300)));
+    }
+    const message = bodyParts.join('\n') || whatText;
+
+    fetch('/api/notify', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ event_id: eventId, title: whatText, message, severity: sev }),
+    }).catch(() => {});  // fire-and-forget; errors are silent in UI
+  }
 }
 
 function prioHighlightAll() {

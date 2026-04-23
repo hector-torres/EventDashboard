@@ -415,9 +415,13 @@ class MarketIndicesManager:
             return self._cache.get(cfg['id'])
 
         history    = measles_manager.get_history() if hasattr(measles_manager, 'get_history') else []
-        sparkline  = [e['cases'] for e in history if e.get('cases') is not None]
-        prev_cases = (cases - change) if change is not None else cases
-        first_cases = sparkline[0] if sparkline else cases
+        all_points = [e['cases'] for e in history if e.get('cases') is not None]
+        sparkline  = all_points[-5:]          # most recent 5 weeks for the chart
+
+        # Meta row: mirror gasoline Yest/Wk/Mo as YTD/Wk/Mo
+        # prev_close = 1 week ago, open = ~4 weeks ago (monthly reference)
+        wk_ago = all_points[-2] if len(all_points) >= 2 else None
+        mo_ago = all_points[-5] if len(all_points) >= 5 else (all_points[0] if all_points else None)
 
         tile = {
             'id':            cfg['id'],
@@ -428,8 +432,8 @@ class MarketIndicesManager:
             'currency':      'USD',
             'currency_sym':  '',
             'price':         cases,
-            'open':          first_cases,
-            'prev_close':    prev_cases,
+            'open':          mo_ago,           # Mo reference
+            'prev_close':    wk_ago,           # Wk reference
             'day_high':      d.get('prior_cases'),
             'day_low':       None,
             'change':        change,

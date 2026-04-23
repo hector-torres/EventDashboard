@@ -212,6 +212,80 @@ def delete_priority(keyword):
     _save_priorities(priorities)
     return jsonify({'priorities': priorities})
 
+# ── Pushover Notifications ───────────────────────────────────────────────────
+# Credentials loaded from .env: PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN
+_PUSHOVER_USER  = os.getenv('PUSHOVER_USER_KEY',  '').strip()
+_PUSHOVER_TOKEN = os.getenv('PUSHOVER_API_TOKEN', '').strip()
+_PUSHOVER_URL   = 'https://api.pushover.net/1/messages.json'
+
+# Dedup: track event IDs already notified so repeat polls don't re-fire.
+_notified_ids: set = set()
+_notified_lock = threading.Lock()
+
+@app.route('/api/notify', methods=['POST'])
+def push_notify():
+    """
+    Send a Pushover push notification for a priority event.
+    Body: { event_id, title, message, severity }
+    Only fires for CRITICAL or HIGH severity. Deduplicates by event_id.
+    Returns { sent: bool, reason?: str }
+    """
+    if not _PUSHOVER_USER or not _PUSHOVER_TOKEN:
+        return jsonify({'sent': False, 'reason': 'Pushover credentials not configured'}), 503
+
+    data     = request.get_json() or {}
+    event_id = (data.get('event_id') or '').strip()
+    title    = (data.get('title')    or 'Priority Event').strip()
+    message  = (data.get('message')  or title).strip()
+    severity = (data.get('severity') or '').upper()
+
+    if severity not in ('CRITICAL', 'HIGH'):
+        return jsonify({'sent': False, 'reason': f'severity {severity!r} not eligible'})
+
+    if not event_id:
+        return jsonify({'sent': False, 'reason': 'event_id required'}), 400
+
+    with _notified_lock:
+        if event_id in _notified_ids:
+            return jsonify({'sent': False, 'reason': 'already notified'})
+        _notified_ids.add(event_id)
+
+    # Pushover priority: 1 (high) for HIGH, 2 (emergency/ack required) for CRITICAL.
+    # Emergency priority requires retry + expire params.
+    pushover_priority = 2 if severity == 'CRITICAL' else 1
+    payload = {
+        'token':   _PUSHOVER_TOKEN,
+        'user':    _PUSHOVER_USER,
+        'title':   f'[{severity}] {title}'[:250],
+        'message': message[:1024],
+        'priority': pushover_priority,
+        'sound':   'siren' if severity == 'CRITICAL' else 'updown',
+    }
+    if pushover_priority == 2:
+        payload['retry']  = 60   # retry every 60s until acknowledged
+        payload['expire'] = 600  # stop retrying after 10 min
+
+    try:
+        import requests as _req
+        resp = _req.post(_PUSHOVER_URL, data=payload, timeout=8)
+        resp.raise_for_status()
+        logger.info('[Pushover] sent %s — %s', severity, title)
+        return jsonify({'sent': True})
+    except Exception as e:
+        # Roll back dedup so it can retry on next match
+        with _notified_lock:
+            _notified_ids.discard(event_id)
+        logger.warning('[Pushover] send failed: %s', e)
+        return jsonify({'sent': False, 'reason': str(e)}), 502
+
+@app.route('/api/notify/status')
+def notify_status():
+    """Returns whether Pushover is configured."""
+    return jsonify({
+        'configured': bool(_PUSHOVER_USER and _PUSHOVER_TOKEN),
+        'notified_count': len(_notified_ids),
+    })
+
 @app.route('/api/accounts')
 def get_accounts():
     return jsonify({

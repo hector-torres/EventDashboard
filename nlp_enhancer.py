@@ -323,43 +323,15 @@ class NLPEnhancer:
         if not _SPACY_AVAILABLE:
             logger.info('[NLPEnhancer] spaCy not installed — using regex.')
             return
-        self._try_load_spacy_models()
-
-    def _try_load_spacy_models(self, after_download: bool = False):
-        """Attempt to load any available spaCy model. On first failure,
-        auto-downloads en_core_web_sm and retries once."""
         for model in ('en_core_web_md', 'en_core_web_sm', 'en_core_web_lg'):
             try:
-                self._nlp     = _spacy_mod.load(model, disable=['parser', 'lemmatizer'])
+                self._nlp     = _spacy_mod.load(model, disable=['parser','lemmatizer'])
                 self._p1_mode = 'spacy'
                 logger.info(f'[NLPEnhancer] spaCy loaded: {model}')
                 return
             except OSError:
                 continue
-
-        if after_download:
-            # Already tried downloading — give up gracefully
-            logger.warning('[NLPEnhancer] spaCy model download succeeded but load still failed — using regex.')
-            return
-
-        # No model found — attempt silent auto-download of en_core_web_sm
-        logger.info('[NLPEnhancer] No spaCy model found — downloading en_core_web_sm...')
-        try:
-            import subprocess, sys
-            result = subprocess.run(
-                [sys.executable, '-m', 'spacy', 'download', 'en_core_web_sm'],
-                capture_output=True, text=True, timeout=120
-            )
-            if result.returncode == 0:
-                logger.info('[NLPEnhancer] en_core_web_sm downloaded — loading.')
-                self._try_load_spacy_models(after_download=True)
-            else:
-                logger.warning(
-                    f'[NLPEnhancer] Auto-download failed (exit {result.returncode}): '
-                    f'{result.stderr.strip()[:200]} — using regex.'
-                )
-        except Exception as e:
-            logger.warning(f'[NLPEnhancer] Auto-download error: {e} — using regex.')
+        logger.warning('[NLPEnhancer] spaCy installed but no model found.')
 
     # ── Phase 1: Negation ─────────────────────────────────────────────────────
 
@@ -396,6 +368,53 @@ class NLPEnhancer:
         if self._p1_mode == 'spacy':
             return self._extract_entities_spacy(text)
         return self._extract_entities_regex(text)
+
+    def extract_subject_entities(self, text: str) -> List[Dict]:
+        """
+        Return named entities that are grammatical subjects of their clause.
+        Uses spaCy dependency parse when available; falls back to plain
+        extract_entities() with a positional heuristic (earlier = more likely subject).
+
+        Each result dict: {'text': str, 'label': str, 'is_subject': bool, 'position': int}
+        """
+        if self._p1_mode == 'spacy':
+            return self._extract_subject_entities_spacy(text)
+        # Regex fallback: annotate with position, mark first entity as subject
+        entities = self._extract_entities_regex(text)
+        result = []
+        for i, e in enumerate(entities):
+            result.append({**e, 'is_subject': i == 0, 'position': text.lower().find(e['text'].lower())})
+        return result
+
+    def _extract_subject_entities_spacy(self, text: str) -> List[Dict]:
+        """Use spaCy dep parse to identify subject entities."""
+        doc = self._nlp(text)
+        # Map span start → dep label for each token in a named entity span
+        subject_deps = {'nsubj', 'nsubjpass', 'csubj', 'ROOT'}
+        ent_roles: dict = {}   # ent.text → best dep role found
+
+        for ent in doc.ents:
+            for token in ent:
+                if token.dep_ in subject_deps:
+                    ent_roles[ent.text] = token.dep_
+                    break
+            if ent.text not in ent_roles:
+                ent_roles[ent.text] = token.dep_   # store whatever dep it has
+
+        seen = set()
+        result = []
+        for ent in doc.ents:
+            if ent.text in seen or len(ent.text) < 2:
+                continue
+            seen.add(ent.text)
+            dep = ent_roles.get(ent.text, '')
+            result.append({
+                'text':       ent.text,
+                'label':      ent.label_,
+                'is_subject': dep in subject_deps,
+                'position':   ent.start_char,
+            })
+        return result
 
     def _extract_entities_spacy(self, text: str) -> List[Dict]:
         doc  = self._nlp(text)

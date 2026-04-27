@@ -34,18 +34,15 @@ from collections import defaultdict
 from typing import List, Dict, Optional
 import re
 import uuid
-import logging
-
-logger = logging.getLogger(__name__)
 
 # NLP enhancement layer (spaCy optional — degrades gracefully without it)
 try:
     from nlp_enhancer import get_enhancer as _get_nlp
     _nlp = _get_nlp()
-    logger.info("[EventDetector] NLP enhancer loaded: %s", _nlp.describe())
+    print(f"[EventDetector] NLP enhancer loaded: {_nlp.describe()}")
 except ImportError:
     _nlp = None
-    logger.warning("[EventDetector] nlp_enhancer not found — NLP features disabled")
+    print("[EventDetector] nlp_enhancer not found — NLP features disabled")
 
 # ─── Breaking News Keywords ──────────────────────────────────────────────────
 BREAKING_KEYWORDS = {
@@ -656,144 +653,204 @@ class KeywordClusterStrategy(DetectionStrategy):
 
 
 
-    def _generate_title(self, keyword: str, cluster: list, total_weight: float = 0) -> str:
+    @staticmethod
+    def _extract_summary_sentence(text: str, max_len: int = 120) -> str:
         """
-        Build an informative event title from the five semantic components:
-        WHO (named entity/subject) · WHAT (action verb) · WHERE (location) · OBJECT
-
-        Strategy:
-        1. For geo:/person:/ent: prefixed keywords — use the structured key directly
-        2. For wire_alert — parse the wire header (SUBJECT: DETAIL format)
-        3. For all other keywords — extract entities + action phrase from the best post
-        Falls back gracefully at each step so something always renders.
+        Pull a clean summary sentence from raw post text.
+        Strips wire prefixes, finds the first meaningful clause,
+        and truncates cleanly at a sentence or clause boundary.
         """
-        count      = len(cluster)
-        news_accts = sum(1 for c in cluster if c['post'].get('is_news_account'))
-
-        if keyword.startswith(('geo:', 'person:', 'ent:')):
-            parts   = keyword.replace('geo:', '').replace('person:', '').replace('ent:', '').split('+')
-            subject = parts[0].title() if parts else keyword
-            verb    = parts[1].replace('_', ' ').title() if len(parts) > 1 else ''
-            kw_display = f"{subject} — {verb}" if verb else subject
-
-        elif keyword == 'wire_alert':
-            best_text = cluster[0]['post'].get('text', '')[:80].strip()
-            # Strip leading BREAKING / JUST IN / ALERT prefixes
-            best_text = re.sub(
-                r'^(?:BREAKING|JUST IN|ALERT|FLASH|URGENT|UPDATE)[:\s\-—]*',
-                '', best_text, flags=re.IGNORECASE
-            ).strip()
-            for sep in (':', '—', ' - ', ' | '):
-                if sep in best_text:
-                    best_text = best_text.split(sep)[0].strip()
-                    break
-            kw_display = best_text.title()[:55] if best_text else 'Wire Alert'
-
-        else:
-            # General case: extract semantic components.
-            # _extract_semantic_title returns a dict {who, what, where}.
-            comps = self._extract_semantic_title(keyword, cluster)
-            parts = []
-            if comps.get('who'):
-                parts.append(comps['who'])
-            parts.append(comps.get('what') or keyword.title())
-            if comps.get('where'):
-                parts.append(comps['where'])
-            kw_display = ' — '.join(parts) if parts else keyword.title()
-        suffix = f" ({news_accts} news {'source' if news_accts == 1 else 'sources'})" if news_accts else ''
-        return f"{kw_display} — {count} {'post' if count == 1 else 'posts'}{suffix}"
-
-    def _extract_semantic_title(self, keyword: str, cluster: list) -> str:
-        """
-        Extract WHO · WHAT · WHERE from the highest-weight post to build a
-        descriptive title. Uses NLP entities when available, falls back to
-        regex patterns.
-
-        Target output examples:
-          "Iran — Missile Attack — Qatar Gas Facility"
-          "Israel — Airstrike — Gaza"
-          "Fed Reserve — Rate Decision"
-          "Hurricane Milton — Florida"
-        """
-        # Use the highest-weight post as the primary source
-        best = cluster[0]['post']
-        text = best.get('text', '')
-
-        # Strip common wire prefixes so they don't pollute entity extraction
+        # 1. Strip wire prefixes
         clean = re.sub(
-            r'^(?:BREAKING|JUST IN|ALERT|FLASH|URGENT|UPDATE|DEVELOPING)[:\s\-—]*',
+            r'^(?:BREAKING|JUST IN|ALERT|FLASH|URGENT|UPDATE|DEVELOPING|EXCLUSIVE)[:\s\-—]*',
             '', text, flags=re.IGNORECASE
         ).strip()
 
-        entities = []
-        if _nlp is not None:
-            entities = _nlp.extract_entities(clean)
+        # 2. Remove URLs
+        clean = re.sub(r'https?://\S+', '', clean).strip()
 
-        # ── Extract WHO (subject/actor) ───────────────────────────────────────
-        # Priority: GPE/NORP (country/nationality) > PERSON/ORG > first PROPER
-        who = None
+        # 3. Try to end at the first sentence boundary within max_len
+        if len(clean) <= max_len:
+            return clean.strip()
+
+        # Find a natural break within max_len
+        window = clean[:max_len]
+        for sep in ('. ', '! ', '? ', ' — ', ' - ', '; '):
+            idx = window.rfind(sep)
+            if idx > 30:
+                return window[:idx + 1].strip()
+
+        # Fallback: truncate at last word boundary
+        trimmed = window.rsplit(' ', 1)[0]
+        return (trimmed + '…').strip() if len(trimmed) > 20 else (window + '…').strip()
+
+    def _generate_title(self, keyword: str, cluster: list, total_weight: float = 0) -> str:
+        """
+        Build a human-readable summary sentence as the event title.
+
+        v3.0.3 change: title is now a sentence summary drawn from the best
+        post text rather than a "WHO — WHAT — WHERE — N posts" keyword chain.
+        Post count and news-source count are in the event dict separately.
+        """
+        if keyword.startswith(('geo:', 'person:', 'ent:')):
+            # Structured NLP key — build short subject + verb phrase
+            parts   = keyword.replace('geo:', '').replace('person:', '').replace('ent:', '').split('+')
+            subject = parts[0].title() if parts else keyword
+            verb    = parts[1].replace('_', ' ').title() if len(parts) > 1 else ''
+            return f"{subject} — {verb}" if verb else subject
+
+        if keyword == 'wire_alert':
+            # Use first meaningful clause of wire text
+            best_text = cluster[0]['post'].get('text', '').strip()
+            return self._extract_summary_sentence(best_text, max_len=100)
+
+        # General case: extract summary from the highest-weight post,
+        # anchored by the WHO/WHERE semantic components for context.
+        best_text = cluster[0]['post'].get('text', '').strip()
+        summary   = self._extract_summary_sentence(best_text, max_len=120)
+
+        # If the summary is very short or is just the keyword, try second post
+        if len(summary) < 20 and len(cluster) > 1:
+            second = cluster[1]['post'].get('text', '').strip()
+            alt    = self._extract_summary_sentence(second, max_len=120)
+            if len(alt) > len(summary):
+                summary = alt
+
+        return summary if summary else keyword.title()
+
+    def _extract_semantic_title(self, keyword: str, cluster: list) -> str:
+        """
+        Extract WHO · WHAT · WHERE from the cluster.
+
+        Improvements over v1:
+        - Scans up to 5 cluster posts rather than just cluster[0]
+        - Uses extract_subject_entities() dep-parse to distinguish subjects
+          (actors/agents) from objects/locations — fixes e.g. "Africa" being
+          chosen as WHO when it appears as a destination, not an actor
+        - Entity scoring: subject entities score 3x; first-mention 2x; others 1x
+        - Falls back gracefully through regex → COUNTRY_NAMES scan
+        """
+        # ── Collect and clean the best posts ─────────────────────────────────
+        _wire_prefix = re.compile(
+            r'^(?:BREAKING|JUST IN|ALERT|FLASH|URGENT|UPDATE|DEVELOPING)[:\s\-—]*',
+            re.IGNORECASE
+        )
+        _preposition = re.compile(
+            r'\b(?:towards?|toward|into|through|via|near|around|across|'
+            r'diverted|heading|bound|destined|approach)\b',
+            re.IGNORECASE
+        )
+
+        posts_text = []
+        for item in cluster[:5]:
+            t = item['post'].get('text', '').strip()
+            if t:
+                posts_text.append(_wire_prefix.sub('', t).strip())
+
+        if not posts_text:
+            return {'who': None, 'what': keyword.title(), 'where': None}
+
+        primary_text  = posts_text[0]
+        primary_lower = primary_text.lower()
+
+        # ── Entity scoring across all candidate posts ─────────────────────────
+        # Key: entity text (lower) → {text, label, score, is_subject}
+        entity_scores: dict = {}
+
+        def _score_entity(txt, label, is_subject, position, post_idx):
+            """Accumulate weighted score for an entity."""
+            key = txt.lower().strip()
+            if not key or len(key) < 2:
+                return
+            # Base score from role
+            base = 3 if is_subject else (2 if position < 40 else 1)
+            # Penalise if preceded by a preposition in primary text (likely object/destination)
+            if post_idx == 0:
+                start = primary_lower.find(key)
+                if start > 0:
+                    preceding = primary_lower[max(0, start-30):start]
+                    if _preposition.search(preceding):
+                        base = max(1, base - 2)
+            prev = entity_scores.get(key, {})
+            entity_scores[key] = {
+                'text':       txt,
+                'label':      label,
+                'score':      prev.get('score', 0) + base,
+                'is_subject': prev.get('is_subject', False) or is_subject,
+            }
+
+        for post_idx, text in enumerate(posts_text):
+            if _nlp is not None:
+                ents = _nlp.extract_subject_entities(text)
+                for e in ents:
+                    _score_entity(
+                        e['text'], e.get('label', ''), e.get('is_subject', False),
+                        e.get('position', 999), post_idx
+                    )
+            else:
+                # Regex fallback — treat first entity per post as subject
+                for i, e in enumerate(re.findall(r'\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b', text)):
+                    _score_entity(e, 'PROPER', i == 0, text.find(e), post_idx)
+
+        # ── Also sweep all post texts for known country names ─────────────────
+        all_text_lower = ' '.join(posts_text).lower()
+        detected_countries = [c.title() for c in COUNTRY_NAMES if c in all_text_lower and ' ' not in c]
+        detected_countries += [c.title() for c in COUNTRY_NAMES if ' ' in c and c in all_text_lower]
+
+        for i, c in enumerate(detected_countries):
+            key = c.lower()
+            if key not in entity_scores:
+                # Check if preceded by preposition in primary text
+                start = primary_lower.find(key)
+                is_obj = False
+                if start > 0:
+                    preceding = primary_lower[max(0, start-30):start]
+                    is_obj = bool(_preposition.search(preceding))
+                _score_entity(c, 'GPE', i == 0 and not is_obj, start if start >= 0 else 999, 0)
+
+        # ── Pick WHO (highest-score GPE/NORP/PERSON/ORG) ─────────────────────
+        geo_labels = {'GPE', 'LOC', 'NORP', 'FAC', 'PROPER'}
+        org_labels = {'ORG', 'PERSON'}
+
+        def _sorted(labels):
+            return sorted(
+                [v for v in entity_scores.values() if v['label'] in labels],
+                key=lambda x: (-x['score'], -x['is_subject'])
+            )
+
+        who   = None
         where = None
-        orgs  = []
-        gpes  = []
-        persons = []
 
-        for e in entities:
-            label = e.get('label', '')
-            txt   = e['text'].strip()
-            if not txt or len(txt) < 2:
-                continue
-            if label in ('GPE', 'LOC', 'NORP', 'FAC'):
-                gpes.append(txt)
-            elif label == 'PERSON':
-                persons.append(txt)
-            elif label in ('ORG', 'PROPER'):
-                orgs.append(txt)
+        geo_ranked = _sorted(geo_labels)
+        org_ranked = _sorted(org_labels)
 
-        # Also check for known country names in text (fallback when NLP is regex-only)
-        text_lower = clean.lower()
-        detected_countries = [c.title() for c in COUNTRY_NAMES if c in text_lower and ' ' not in c]
-        detected_countries += [c.title() for c in COUNTRY_NAMES if ' ' in c and c in text_lower]
+        if geo_ranked:
+            who = geo_ranked[0]['text']
+            # WHERE = second-highest geo entity if different from WHO
+            if len(geo_ranked) > 1 and geo_ranked[1]['text'].lower() != who.lower():
+                where = geo_ranked[1]['text']
+        elif org_ranked:
+            who = org_ranked[0]['text']
 
-        # WHO = first GPE or detected country; WHERE = second GPE (if different)
-        if gpes:
-            who   = gpes[0]
-            if len(gpes) > 1 and gpes[1].lower() != gpes[0].lower():
-                where = gpes[1]
-        elif detected_countries:
-            who = detected_countries[0]
-            if len(detected_countries) > 1:
-                where = detected_countries[1]
-        elif persons:
-            who = persons[0]
-        elif orgs:
-            who = orgs[0]
-
-        # ── Extract WHAT (action phrase) ──────────────────────────────────────
-        # Build from keyword + any action verb found in the post near the keyword
+        # ── Extract WHAT (action phrase built from keyword + modifiers) ───────
         kw_title = keyword.title()
-
-        # Look for a more descriptive noun phrase around the keyword in the text
-        # Pattern: look for "[adjective] [noun] [keyword]" or "[keyword] [on/of/against] [noun]"
         action_phrase = None
 
-        # Check for modifier before keyword: "missile attack", "drone strike", "rocket attack"
         modifiers = re.search(
             r'\b(missile|drone|rocket|mortar|cyber|suicide|car bomb|'
             r'nuclear|chemical|biological|coordinated|deadly|fatal|'
             r'military|armed|terrorist|mass|random|targeted)\s+' + re.escape(keyword),
-            text_lower
+            primary_lower
         )
         if modifiers:
             action_phrase = modifiers.group(0).title()
 
-        # Check for "[keyword] on/against/in [object]" pattern
         object_match = re.search(
             re.escape(keyword) + r'\s+(?:on|against|in|at|near|targeting)\s+([\w\s]{3,30})',
-            text_lower
+            primary_lower
         )
         if object_match and not action_phrase:
             obj = object_match.group(1).strip()
-            # Don't repeat WHO in the object phrase — whole-word match only
             who_lower = (who or '').lower()
             if who_lower and re.match(re.escape(who_lower) + r'\b', obj.lower()):
                 obj = obj[len(who_lower):].strip()
@@ -802,34 +859,24 @@ class KeywordClusterStrategy(DetectionStrategy):
 
         what = action_phrase or kw_title
 
-        # ── Extract WHERE (object/location if not already used as WHO) ────────
-        if not where and gpes and len(gpes) > 1:
-            where = gpes[1]
-        if not where and detected_countries and len(detected_countries) > 1:
-            where = detected_countries[1]
-
-        # ── Normalise demonyms → country names ───────────────────────────────
+        # ── Normalise demonyms → country names ────────────────────────────────
         def _norm(name):
             return _NORP_TO_COUNTRY.get(name.lower(), name) if name else name
 
         who   = _norm(who)
         where = _norm(where)
 
-        # ── Deduplicate: drop WHERE if it's the same root as WHO ─────────────
+        # ── Deduplicate WHERE if same root as WHO ─────────────────────────────
         def _root(name):
             return name.lower().replace(' ', '').rstrip('s')[:6] if name else ''
 
-        if where and _root(where) == _root(who):
+        if where and _root(where) == _root(who or ''):
             where = None
 
-        # ── Truncate object phrase cleanly at word boundary ───────────────────
         if where and len(where) > 22:
             trimmed = where[:22].rsplit(' ', 1)[0]
             where   = trimmed if trimmed else where[:22]
 
-        # ── Return components as dict ─────────────────────────────────────────
-        if where and _root(where) == _root(who or ''):
-            where = None
         return {
             'who':   who[:30]   if who   else None,
             'what':  what[:35]  if what  else kw_title,
@@ -1036,35 +1083,17 @@ class VelocitySpikeStrategy(DetectionStrategy):
     def _generate_spike_title(self, word: str, cluster: list,
                                total_weight: float, news_accts: int) -> str:
         """
-        Build a semantic title for a velocity spike event.
-        Reuses KeywordClusterStrategy._extract_semantic_title logic via
-        a pseudo-cluster built from the highest-weight spike entries.
-        Falls back to a descriptive keyword title if extraction yields nothing.
+        Build a summary sentence title for a velocity spike event.
+        Extracts from the best post text like _generate_title does.
         """
-        # Try to extract WHO — WHAT — WHERE from the best posts
         if cluster:
-            comps = KeywordClusterStrategy._extract_semantic_title(
-                KeywordClusterStrategy, word, cluster
-            )
-            # _extract_semantic_title returns a dict {who, what, where}.
-            parts = []
-            if comps.get('who'):   parts.append(comps['who'])
-            if comps.get('what'):  parts.append(comps['what'])
-            if comps.get('where'): parts.append(comps['where'])
-            semantic = ' — '.join(parts) if parts else None
-            if semantic and semantic.lower() != word.lower():
-                count  = len(cluster)
-                suffix = (f" ({news_accts} news "
-                          f"{'source' if news_accts == 1 else 'sources'})"
-                          if news_accts else '')
-                return f"{semantic} — {count} {'post' if count == 1 else 'posts'}{suffix}"
+            best_text = cluster[0]['post'].get('text', '').strip()
+            summary   = KeywordClusterStrategy._extract_summary_sentence(best_text, max_len=120)
+            if summary and summary.lower() != word.lower() and len(summary) > 15:
+                return summary
 
-        # Fallback: descriptive spike title (better than raw "Volume spike: word")
-        count  = len(cluster)
-        suffix = (f" ({news_accts} news "
-                  f"{'source' if news_accts == 1 else 'sources'})"
-                  if news_accts else '')
-        return f"{word.title()} Spike — {count} {'post' if count == 1 else 'posts'}{suffix}"
+        # Fallback: readable spike label
+        return f"Spike in mentions: {word.title()}"
 
 
 # ─── Event Lifecycle ──────────────────────────────────────────────────────────
@@ -1228,11 +1257,11 @@ class EventDetector:
                 new = strategy.analyze(posts, self._events)
                 all_new.extend(new)
             except Exception as e:
-                logger.warning("[EventDetector] Strategy '%s' error: %s", strategy.name, e)
+                print(f"[EventDetector] Strategy '{strategy.name}' error: {e}")
 
         if all_new:
             self._events = (all_new + self._events)[:MAX_EVENTS]
-            logger.info("[EventDetector] %d new event(s) detected.", len(all_new))
+            print(f"[EventDetector] {len(all_new)} new event(s) detected.")
 
         for ev in self._events:
             ev['status'] = _compute_event_status(ev.get('detected_at', ''))

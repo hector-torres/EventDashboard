@@ -34,6 +34,9 @@ from collections import defaultdict
 from typing import List, Dict, Optional
 import re
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 # NLP enhancement layer (spaCy optional — degrades gracefully without it)
 try:

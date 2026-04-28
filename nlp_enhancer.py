@@ -154,6 +154,18 @@ ZERO_SHOT_MIN_SCORE      = 0.30
 # EMBEDDING ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _run_spacy_download(executable: str) -> None:
+    """Top-level function for multiprocessing spawn — downloads en_core_web_sm.
+    Must be module-level (not a method) so it can be pickled by spawn context.
+    """
+    import subprocess
+    result = subprocess.run(
+        [executable, '-m', 'spacy', 'download', 'en_core_web_sm'],
+        capture_output=True, text=True, timeout=120
+    )
+    raise SystemExit(result.returncode)
+
+
 class EmbeddingEngine:
     MODEL_NAME = 'all-MiniLM-L6-v2'
 
@@ -343,19 +355,26 @@ class NLPEnhancer:
 
         logger.info('[NLPEnhancer] No spaCy model found — downloading en_core_web_sm...')
         try:
-            import subprocess, sys
-            result = subprocess.run(
-                [sys.executable, '-m', 'spacy', 'download', 'en_core_web_sm'],
-                capture_output=True, text=True, timeout=120
+            import sys, multiprocessing
+            # Use 'spawn' start method to avoid forking after PyTorch/spaCy/ObjC
+            # runtimes are partially initialised — forking those causes segfaults
+            # on macOS (MPS/Accelerate framework). Spawn starts a clean process.
+            ctx = multiprocessing.get_context('spawn')
+            proc = ctx.Process(
+                target=_run_spacy_download,
+                args=(sys.executable,),
+                daemon=False,
             )
-            if result.returncode == 0:
+            proc.start()
+            proc.join(timeout=180)
+            if proc.exitcode == 0:
                 logger.info('[NLPEnhancer] en_core_web_sm downloaded — loading.')
                 self._try_load_spacy_models(after_download=True)
             else:
                 logger.warning(
-                    '[NLPEnhancer] Auto-download failed (exit %d): %s — using regex.',
-                    result.returncode,
-                    (result.stderr.strip() or result.stdout.strip())[:300]
+                    '[NLPEnhancer] Auto-download failed (exit %s) — '
+                    'run manually: python -m spacy download en_core_web_sm',
+                    proc.exitcode
                 )
         except Exception as e:
             logger.warning('[NLPEnhancer] Auto-download error: %s — using regex.', e)

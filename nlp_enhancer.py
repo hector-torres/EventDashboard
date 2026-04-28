@@ -154,18 +154,6 @@ ZERO_SHOT_MIN_SCORE      = 0.30
 # EMBEDDING ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _run_spacy_download(executable: str) -> None:
-    """Top-level function for multiprocessing spawn — downloads en_core_web_sm.
-    Must be module-level (not a method) so it can be pickled by spawn context.
-    """
-    import subprocess
-    result = subprocess.run(
-        [executable, '-m', 'spacy', 'download', 'en_core_web_sm'],
-        capture_output=True, text=True, timeout=120
-    )
-    raise SystemExit(result.returncode)
-
-
 class EmbeddingEngine:
     MODEL_NAME = 'all-MiniLM-L6-v2'
 
@@ -337,9 +325,9 @@ class NLPEnhancer:
             return
         self._try_load_spacy_models()
 
-    def _try_load_spacy_models(self, after_download: bool = False):
-        """Attempt to load any available spaCy model. On first failure,
-        auto-downloads en_core_web_sm and retries once."""
+    def _try_load_spacy_models(self):
+        """Attempt to load any available spaCy model, trying md → sm → lg.
+        Falls back to regex mode gracefully if none found."""
         for model in ('en_core_web_md', 'en_core_web_sm', 'en_core_web_lg'):
             try:
                 self._nlp     = _spacy_mod.load(model, disable=['parser', 'lemmatizer'])
@@ -349,35 +337,10 @@ class NLPEnhancer:
             except OSError:
                 continue
 
-        if after_download:
-            logger.warning('[NLPEnhancer] spaCy model download succeeded but load still failed — using regex.')
-            return
-
-        logger.info('[NLPEnhancer] No spaCy model found — downloading en_core_web_sm...')
-        try:
-            import sys, multiprocessing
-            # Use 'spawn' start method to avoid forking after PyTorch/spaCy/ObjC
-            # runtimes are partially initialised — forking those causes segfaults
-            # on macOS (MPS/Accelerate framework). Spawn starts a clean process.
-            ctx = multiprocessing.get_context('spawn')
-            proc = ctx.Process(
-                target=_run_spacy_download,
-                args=(sys.executable,),
-                daemon=False,
-            )
-            proc.start()
-            proc.join(timeout=180)
-            if proc.exitcode == 0:
-                logger.info('[NLPEnhancer] en_core_web_sm downloaded — loading.')
-                self._try_load_spacy_models(after_download=True)
-            else:
-                logger.warning(
-                    '[NLPEnhancer] Auto-download failed (exit %s) — '
-                    'run manually: python -m spacy download en_core_web_sm',
-                    proc.exitcode
-                )
-        except Exception as e:
-            logger.warning('[NLPEnhancer] Auto-download error: %s — using regex.', e)
+        logger.warning(
+            '[NLPEnhancer] spaCy installed but no model found — using regex fallback. '
+            'Run: python -m spacy download en_core_web_sm'
+        )
 
     # ── Phase 1: Negation ─────────────────────────────────────────────────────
 

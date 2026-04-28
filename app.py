@@ -11,18 +11,21 @@ import json
 import logging
 import os
 
-# ── Logging — must be configured BEFORE any module imports so that
-# submodule loggers (event_detector, nlp_enhancer, etc.) inherit the
-# correct level from the root logger on first use. PRODUCTION=true → WARNING+.
-from dotenv import load_dotenv
-load_dotenv()
-_PRODUCTION = os.getenv('PRODUCTION', 'false').strip().lower() in ('true', '1', 'yes')
-
-logging.basicConfig(
-    level=logging.WARNING if _PRODUCTION else logging.INFO,
+# ── Preflight — must run BEFORE any ML library imports (spaCy, PyTorch, etc.)
+# On macOS, forking after those runtimes are loaded causes segfaults.
+# preflight.py checks for missing spaCy models and downloads them safely here.
+from dotenv import load_dotenv as _load_dotenv
+_load_dotenv()
+import logging as _logging
+_logging.basicConfig(
+    level=_logging.WARNING if os.getenv('PRODUCTION','false').strip().lower() in ('true','1','yes') else _logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
     datefmt='%H:%M:%S',
 )
+import preflight; preflight.run()
+
+# ── Logging level for noisy libraries ───────────────────────────────────────
+_PRODUCTION = os.getenv('PRODUCTION', 'false').strip().lower() in ('true', '1', 'yes')
 for _lib in ('werkzeug', 'urllib3', 'requests', 'httpx'):
     logging.getLogger(_lib).setLevel(logging.WARNING)
 

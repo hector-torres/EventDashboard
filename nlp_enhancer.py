@@ -323,15 +323,42 @@ class NLPEnhancer:
         if not _SPACY_AVAILABLE:
             logger.info('[NLPEnhancer] spaCy not installed — using regex.')
             return
+        self._try_load_spacy_models()
+
+    def _try_load_spacy_models(self, after_download: bool = False):
+        """Attempt to load any available spaCy model. On first failure,
+        auto-downloads en_core_web_sm and retries once."""
         for model in ('en_core_web_md', 'en_core_web_sm', 'en_core_web_lg'):
             try:
-                self._nlp     = _spacy_mod.load(model, disable=['parser','lemmatizer'])
+                self._nlp     = _spacy_mod.load(model, disable=['parser', 'lemmatizer'])
                 self._p1_mode = 'spacy'
-                logger.info(f'[NLPEnhancer] spaCy loaded: {model}')
+                logger.info('[NLPEnhancer] spaCy loaded: %s', model)
                 return
             except OSError:
                 continue
-        logger.warning('[NLPEnhancer] spaCy installed but no model found.')
+
+        if after_download:
+            logger.warning('[NLPEnhancer] spaCy model download succeeded but load still failed — using regex.')
+            return
+
+        logger.info('[NLPEnhancer] No spaCy model found — downloading en_core_web_sm...')
+        try:
+            import subprocess, sys
+            result = subprocess.run(
+                [sys.executable, '-m', 'spacy', 'download', 'en_core_web_sm'],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0:
+                logger.info('[NLPEnhancer] en_core_web_sm downloaded — loading.')
+                self._try_load_spacy_models(after_download=True)
+            else:
+                logger.warning(
+                    '[NLPEnhancer] Auto-download failed (exit %d): %s — using regex.',
+                    result.returncode,
+                    (result.stderr.strip() or result.stdout.strip())[:300]
+                )
+        except Exception as e:
+            logger.warning('[NLPEnhancer] Auto-download error: %s — using regex.', e)
 
     # ── Phase 1: Negation ─────────────────────────────────────────────────────
 
